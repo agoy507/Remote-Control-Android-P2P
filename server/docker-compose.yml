@@ -1,17 +1,36 @@
 services:
+  # ─── Caddy reverse proxy ───────────────────────────────────────────────────
+  # Hanya listen di loopback (127.0.0.1:18081).
+  # Cloudflare Tunnel → 127.0.0.1:18081 → proxy /ws & /health ke signaling.
+  caddy:
+    image: caddy:2-alpine
+    container_name: vps-caddy-1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18081:18081"   # loopback only — Cloudflare Tunnel endpoint
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - mdremote_net
+    depends_on:
+      - signaling
+
+  # ─── Signaling server ──────────────────────────────────────────────────────
+  # Internal Docker only — tidak dipublish ke host.
   signaling:
     build:
       context: ./signaling
       dockerfile: Dockerfile
-    container_name: kendalip2p-signaling
+    container_name: vps-signaling-1
     restart: unless-stopped
-    ports:
-      - "${SIGNALING_PORT:-8080}:8080"
+    # Port 8080 TIDAK dipublish ke host; hanya diakses via jaringan internal mdremote_net
     environment:
       PORT: "8080"
-      TURN_SECRET: "${TURN_SECRET:-change_this_strong_hmac_secret}"
-      STUN_URLS: "stun:${PUBLIC_HOST:-localhost}:3478,stun:stun.l.google.com:19302"
-      TURN_URLS: "turn:${PUBLIC_HOST:-localhost}:3478?transport=udp,turn:${PUBLIC_HOST:-localhost}:3478?transport=tcp"
+      TURN_SECRET: "${TURN_SECRET}"
+      STUN_URLS: "stun:turn.agoy507.my.id:3478"
+      TURN_URLS: "turn:turn.agoy507.my.id:3478?transport=udp,turn:turn.agoy507.my.id:3478?transport=tcp"
       TURN_TTL_SECONDS: "${TURN_TTL_SECONDS:-3600}"
       SERVER_API_TOKEN: "${SERVER_API_TOKEN:-}"
       MAX_AUTH_FAILURES: "5"
@@ -19,28 +38,36 @@ services:
     depends_on:
       - coturn
     networks:
-      - kendalip2p_net
+      - mdremote_net
 
+  # ─── coturn STUN/TURN ──────────────────────────────────────────────────────
+  # Port 3478 & relay 49160-49200 dipublish ke 0.0.0.0 (publik).
   coturn:
     image: coturn/coturn:4.6.3-alpine
-    container_name: kendalip2p-coturn
+    container_name: vps-coturn-1
     restart: unless-stopped
     ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "5349:5349/tcp"
-      - "49152-49252:49152-49252/udp"
+      - "0.0.0.0:3478:3478/udp"
+      - "0.0.0.0:3478:3478/tcp"
+      - "0.0.0.0:49160-49200:49160-49200/udp"
     volumes:
       - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
     command:
       - "-c"
       - "/etc/coturn/turnserver.conf"
-      - "--static-auth-secret=${TURN_SECRET:-change_this_strong_hmac_secret}"
-      - "--realm=${TURN_REALM:-kendalip2p.local}"
-      - "--external-ip=${PUBLIC_IP:-127.0.0.1}"
+      - "--static-auth-secret=${TURN_SECRET}"
+      - "--realm=turn.agoy507.my.id"
+      - "--external-ip=168.110.216.221"
     networks:
-      - kendalip2p_net
+      - mdremote_net
 
 networks:
-  kendalip2p_net:
+  mdremote_net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+
+volumes:
+  caddy_data:
+  caddy_config:

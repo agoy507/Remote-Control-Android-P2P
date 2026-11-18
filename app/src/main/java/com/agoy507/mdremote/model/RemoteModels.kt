@@ -14,12 +14,20 @@ data class ServerEndpointConfig(
     val signalingUrl: String = DEFAULT_SIGNALING_URL,
     val stunUrl: String = DEFAULT_STUN_URL,
     val turnUrl: String = DEFAULT_TURN_URL,
+    val turnUsername: String = DEFAULT_TURN_USERNAME,
+    val turnCredential: String = "",        // diisi dari credential HMAC yang dikirim server
     val serverApiToken: String = "",
 ) {
     companion object {
-        const val DEFAULT_SIGNALING_URL = "ws://10.0.2.2:8080/ws"
-        const val DEFAULT_STUN_URL = "stun:stun.l.google.com:19302"
-        const val DEFAULT_TURN_URL = ""
+        // Production server — remote.agoy507.my.id via Cloudflare Tunnel (wss)
+        const val DEFAULT_SIGNALING_URL = "wss://remote.agoy507.my.id/ws"
+        // turn.agoy507.my.id → 168.110.216.221 (PC B, Oracle)
+        const val DEFAULT_STUN_URL = "stun:turn.agoy507.my.id:3478"
+        const val DEFAULT_TURN_URL = "turn:turn.agoy507.my.id:3478?transport=udp"
+        const val DEFAULT_TURN_USERNAME = "desktopremote"
+        // Fallback untuk dev lokal / emulator
+        const val LOCAL_SIGNALING_URL = "ws://10.0.2.2:8080/ws"
+        const val LOCAL_STUN_URL = "stun:stun.l.google.com:19302"
     }
 }
 
