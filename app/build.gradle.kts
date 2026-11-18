@@ -10,11 +10,11 @@ plugins {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.agoy507.mdremote"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.kendalip2p.xkqzrm"
+    applicationId = "com.agoy507.mdremote"
     minSdk = 24
     targetSdk = 36
     versionCode = 1

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KendaliP2P</string>
+    <string name="app_name">Multidevice Remote</string>
     <string name="accessibility_service_description">Mengizinkan KendaliP2P meneruskan gestur sentuh, geser, gulir, dan tombol navigasi sistem jarak jauh setelah Anda memulai sesi terenkripsi.</string>
     <string name="notification_channel_host">Sesi Berbagi Layar Host</string>
     <string name="notification_channel_host_desc">Menampilkan status aktif saat perangkat dibagikan dan dikendalikan jarak jauh.</string>
