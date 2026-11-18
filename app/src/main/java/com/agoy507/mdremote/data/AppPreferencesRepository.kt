@@ -37,8 +37,6 @@ class AppPreferencesRepository(private val context: Context) {
     val serverConfigFlow: Flow<ServerEndpointConfig> = context.dataStore.data.map { prefs ->
         ServerEndpointConfig(
             signalingUrl = prefs[KEY_SIGNALING_URL] ?: ServerEndpointConfig.DEFAULT_SIGNALING_URL,
-            stunUrl = prefs[KEY_STUN_URL] ?: ServerEndpointConfig.DEFAULT_STUN_URL,
-            turnUrl = prefs[KEY_TURN_URL] ?: ServerEndpointConfig.DEFAULT_TURN_URL,
             serverApiToken = prefs[KEY_SERVER_TOKEN] ?: "",
         )
     }
@@ -125,8 +123,6 @@ class AppPreferencesRepository(private val context: Context) {
     suspend fun saveServerConfig(config: ServerEndpointConfig) {
         context.dataStore.edit { prefs ->
             prefs[KEY_SIGNALING_URL] = config.signalingUrl.trim()
-            prefs[KEY_STUN_URL] = config.stunUrl.trim()
-            prefs[KEY_TURN_URL] = config.turnUrl.trim()
             prefs[KEY_SERVER_TOKEN] = config.serverApiToken.trim()
         }
     }
@@ -178,8 +174,8 @@ class AppPreferencesRepository(private val context: Context) {
         private val KEY_DEVICE_ALIAS = stringPreferencesKey("device_alias")
         private val KEY_SESSION_PASSWORD = stringPreferencesKey("session_password")
         private val KEY_SIGNALING_URL = stringPreferencesKey("signaling_url")
-        private val KEY_STUN_URL = stringPreferencesKey("stun_url")
-        private val KEY_TURN_URL = stringPreferencesKey("turn_url")
+        // KEY_STUN_URL & KEY_TURN_URL dipertahankan agar DataStore lama tidak corrupt
+        // tapi tidak lagi digunakan untuk membangun ICE servers (server yang provide sekarang)
         private val KEY_SERVER_TOKEN = stringPreferencesKey("server_token")
         private val KEY_REQUIRE_APPROVAL = booleanPreferencesKey("require_visual_approval")
         private val KEY_ALLOW_TOUCH_CONTROL = booleanPreferencesKey("allow_touch_control")

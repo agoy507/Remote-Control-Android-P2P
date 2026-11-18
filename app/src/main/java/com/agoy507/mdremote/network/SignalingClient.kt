@@ -411,12 +411,7 @@ class SignalingClient(
                 list.add(builder.createIceServer())
             }
         }
-        if (config.stunUrl.isNotBlank()) {
-            list.add(PeerConnection.IceServer.builder(config.stunUrl).createIceServer())
-        }
-        if (config.turnUrl.isNotBlank()) {
-            list.add(PeerConnection.IceServer.builder(config.turnUrl).createIceServer())
-        }
+        // Fallback STUN hanya jika server tidak mengirim ICE server sama sekali
         if (list.isEmpty()) {
             list.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
         }
