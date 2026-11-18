@@ -1,6 +1,6 @@
 # Multidevice Remote — Caddyfile
 # Listen di loopback 127.0.0.1:18081 saja.
-# Traffic masuk dari Cloudflare Tunnel: remote.agoy507.my.id → tunnel → 127.0.0.1:18081
+# Cloudflare Tunnel: remote.agoy507.my.id → tunnel → 127.0.0.1:18081
 
 :18081 {
     # Health check endpoint — jawab 200 OK
@@ -9,15 +9,15 @@
     }
 
     # WebSocket signaling — proxy ke container signaling internal
-    handle /ws {
+    # FIX: gunakan @websocket matcher agar upgrade header diteruskan dengan benar
+    @websocket {
+        path /ws
+    }
+    handle @websocket {
         reverse_proxy signaling:8080 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
-            # WebSocket upgrade
-            transport http {
-                dial_timeout 5s
-            }
         }
     }
 

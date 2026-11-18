@@ -83,7 +83,7 @@ function recordAuthFailure(clientIp, targetId) {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'kendalip2p-signaling',
+    service: 'mdremote-signaling',
     activePeers: devices.size,
     uptimeSeconds: Math.floor(process.uptime()),
     turnConfigured: TURN_URLS.length > 0,
@@ -270,5 +270,5 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[KendaliP2P Signaling] Listening on 0.0.0.0:${PORT}`);
+  console.log(`[MDRemote Signaling] Listening on 0.0.0.0:${PORT}`);
 });
