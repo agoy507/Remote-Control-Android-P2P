@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KendaliP2P</string>
+    <string name="accessibility_service_description">Mengizinkan KendaliP2P meneruskan gestur sentuh, geser, gulir, dan tombol navigasi sistem jarak jauh setelah Anda memulai sesi terenkripsi.</string>
+    <string name="notification_channel_host">Sesi Berbagi Layar Host</string>
+    <string name="notification_channel_host_desc">Menampilkan status aktif saat perangkat dibagikan dan dikendalikan jarak jauh.</string>
+    <string name="notification_host_title">Mode Host KendaliP2P Aktif</string>
+    <string name="notification_host_waiting">Menunggu koneksi terenkripsi E2EE…</string>
+    <string name="notification_host_connected">Terhubung E2EE AES-256-GCM dengan pengendali</string>
+    <string name="action_stop_host">Hentikan Sesi</string>
+
+    <string name="nav_beranda">Beranda</string>
+    <string name="nav_kendali">Kendalikan</string>
+    <string name="nav_server">Server</string>
+
+    <string name="cd_hero_banner">Ilustrasi jaringan terowongan peer-to-peer terenkripsi</string>
+    <string name="cd_copy_device_id">Salin ID Perangkat</string>
+    <string name="cd_toggle_password">Tampilkan atau sembunyikan kata sandi sesi</string>
+    <string name="cd_regenerate_password">Buat ulang kata sandi sesi baru</string>
+    <string name="cd_e2ee_badge">Status enkripsi End-to-End AES-256-GCM</string>
+    <string name="cd_remote_back">Kembali pada perangkat target</string>
+    <string name="cd_remote_home">Layar utama pada perangkat target</string>
+    <string name="cd_remote_recents">Aplikasi terbaru pada perangkat target</string>
+    <string name="cd_remote_notifications">Buka panel notifikasi perangkat target</string>
+    <string name="cd_remote_lock">Kunci layar perangkat target</string>
+    <string name="cd_remote_keyboard">Kirim input teks terenkripsi ke perangkat target</string>
+    <string name="cd_remote_quality">Atur kualitas dan latensi streaming video</string>
+    <string name="cd_remote_disconnect">Akhiri sesi remote</string>
+    <string name="cd_toggle_hud">Tampilkan atau sembunyikan panel telemetri</string>
+</resources>

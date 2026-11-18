@@ -1,0 +1,19 @@
+{
+  "name": "kendalip2p-signaling-server",
+  "version": "1.0.0",
+  "description": "Zero-knowledge WebSocket signaling & ephemeral coturn credential server for KendaliP2P",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ws": "^8.18.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

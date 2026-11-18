@@ -1,0 +1,46 @@
+services:
+  signaling:
+    build:
+      context: ./signaling
+      dockerfile: Dockerfile
+    container_name: kendalip2p-signaling
+    restart: unless-stopped
+    ports:
+      - "${SIGNALING_PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      TURN_SECRET: "${TURN_SECRET:-change_this_strong_hmac_secret}"
+      STUN_URLS: "stun:${PUBLIC_HOST:-localhost}:3478,stun:stun.l.google.com:19302"
+      TURN_URLS: "turn:${PUBLIC_HOST:-localhost}:3478?transport=udp,turn:${PUBLIC_HOST:-localhost}:3478?transport=tcp"
+      TURN_TTL_SECONDS: "${TURN_TTL_SECONDS:-3600}"
+      SERVER_API_TOKEN: "${SERVER_API_TOKEN:-}"
+      MAX_AUTH_FAILURES: "5"
+      AUTH_WINDOW_MS: "60000"
+    depends_on:
+      - coturn
+    networks:
+      - kendalip2p_net
+
+  coturn:
+    image: coturn/coturn:4.6.3-alpine
+    container_name: kendalip2p-coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/tcp"
+      - "49152-49252:49152-49252/udp"
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command:
+      - "-c"
+      - "/etc/coturn/turnserver.conf"
+      - "--static-auth-secret=${TURN_SECRET:-change_this_strong_hmac_secret}"
+      - "--realm=${TURN_REALM:-kendalip2p.local}"
+      - "--external-ip=${PUBLIC_IP:-127.0.0.1}"
+    networks:
+      - kendalip2p_net
+
+networks:
+  kendalip2p_net:
+    driver: bridge

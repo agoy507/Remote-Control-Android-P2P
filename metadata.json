@@ -1,0 +1,6 @@
+{
+  "name": "KendaliP2P",
+  "description": "Aplikasi remote control Android peer-to-peer real-time latensi rendah dengan enkripsi End-to-End AES-256-GCM dan container server Node.js + coturn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

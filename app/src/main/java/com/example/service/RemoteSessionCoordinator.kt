@@ -1,0 +1,805 @@
+package com.example.service
+
+import android.content.Context
+import android.content.Intent
+import com.example.crypto.E2eeCryptoEngine
+import com.example.data.AppPreferencesRepository
+import com.example.model.ConnectionTelemetry
+import com.example.model.ControllerSessionState
+import com.example.model.HostStatus
+import com.example.model.IncomingConnectionRequest
+import com.example.model.RemoteControlPacket
+import com.example.model.RemoteSystemAction
+import com.example.model.ServerEndpointConfig
+import com.example.model.ServerHealthResult
+import com.example.model.SignalingStatus
+import com.example.model.StreamQualityPreset
+import com.example.model.TrustedDeviceEntry
+import com.example.model.normalizeDeviceId
+import com.example.network.SignalingClient
+import com.example.network.SignalingEvent
+import com.example.webrtc.WebRtcRemoteManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import org.webrtc.IceCandidate
+import org.webrtc.PeerConnection
+import org.webrtc.SessionDescription
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+import javax.crypto.SecretKey
+
+class RemoteSessionCoordinator private constructor(private val appContext: Context) {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val preferences = AppPreferencesRepository(appContext)
+    private val crypto = E2eeCryptoEngine()
+    private val signaling = SignalingClient(scope)
+    val webRtc = WebRtcRemoteManager(appContext, scope, crypto)
+
+    val signalingStatus: StateFlow<SignalingStatus> = signaling.status
+
+    private val _hostStatus = MutableStateFlow<HostStatus>(HostStatus.Idle)
+    val hostStatus: StateFlow<HostStatus> = _hostStatus.asStateFlow()
+
+    private val _incomingRequest = MutableStateFlow<IncomingConnectionRequest?>(null)
+    val incomingRequest: StateFlow<IncomingConnectionRequest?> = _incomingRequest.asStateFlow()
+
+    private val _controllerState = MutableStateFlow<ControllerSessionState>(ControllerSessionState.Idle)
+    val controllerState: StateFlow<ControllerSessionState> = _controllerState.asStateFlow()
+
+    // Active Host projection & session state
+    private var projectionIntent: Intent? = null
+    private var pendingHostHandshake: PendingHostSession? = null
+    private var activeHostSession: ActivePeerSession? = null
+    private var failedAuthAttempts = 0
+
+    // Active Controller session state
+    private var activeControllerSession: ActiveControllerSession? = null
+    private var pingLoopJob: Job? = null
+
+    private data class PendingHostSession(
+        val sessionId: String,
+        val fromId: String,
+        val fromAlias: String,
+        val derivedKeys: E2eeCryptoEngine.DerivedSessionKeys,
+        val clientProofExpected: String,
+        val hostProof: String,
+        val hostInit: E2eeCryptoEngine.EphemeralHandshakeInit,
+        val controllerNonceB64: String,
+    )
+
+    private data class ActivePeerSession(
+        val sessionId: String,
+        val peerId: String,
+        val peerAlias: String,
+        val aesKey: SecretKey,
+        val safetyFingerprint: String,
+        val outgoingSigSeq: AtomicLong = AtomicLong(1L),
+        val expectedSigSeq: Long = 1L,
+    )
+
+    private data class ActiveControllerSession(
+        val sessionId: String,
+        val targetId: String,
+        val targetPassword: String,
+        val init: E2eeCryptoEngine.EphemeralHandshakeInit,
+        var targetAlias: String = "Perangkat Target",
+        var derivedKeys: E2eeCryptoEngine.DerivedSessionKeys? = null,
+        var clientProofB64: String = "",
+        val outgoingSigSeq: AtomicLong = AtomicLong(1L),
+        var expectedSigSeq: Long = 1L,
+    )
+
+    init {
+        scope.launch {
+            val identity = preferences.ensureInitialized()
+            val config = preferences.serverConfigFlow.first()
+            signaling.connect(config, identity.deviceId, identity.deviceAlias)
+        }
+        scope.launch {
+            signaling.events.collect { event -> handleSignalingEvent(event) }
+        }
+        scope.launch {
+            webRtc.telemetry.collect { tel ->
+                when (val ctrl = _controllerState.value) {
+                    is ControllerSessionState.Connected -> {
+                        _controllerState.value = ctrl.copy(telemetry = tel)
+                    }
+                    else -> Unit
+                }
+                when (val host = _hostStatus.value) {
+                    is HostStatus.Connected -> {
+                        _hostStatus.value = host.copy(telemetry = tel)
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    fun reconnectSignaling() {
+        scope.launch {
+            val identity = preferences.ensureInitialized()
+            val config = preferences.serverConfigFlow.first()
+            signaling.connect(config, identity.deviceId, identity.deviceAlias)
+        }
+    }
+
+    suspend fun testServerConnection(config: ServerEndpointConfig): ServerHealthResult {
+        val id = preferences.ensureInitialized().deviceId
+        return signaling.checkServerHealth(config, id)
+    }
+
+    fun startHostMode(mediaProjectionData: Intent) {
+        _hostStatus.value = HostStatus.Starting
+        RemoteHostService.start(appContext, mediaProjectionData)
+    }
+
+    internal fun onHostServiceReady(mediaProjectionData: Intent) {
+        projectionIntent = mediaProjectionData
+        _hostStatus.value = HostStatus.WaitingForPeer()
+        reconnectSignaling()
+    }
+
+    fun stopHostMode() {
+        activeHostSession?.let { active ->
+            sendSessionEnd(active.peerId, active.sessionId, "Host menghentikan berbagi layar.")
+        }
+        activeHostSession = null
+        pendingHostHandshake = null
+        _incomingRequest.value = null
+        projectionIntent = null
+        webRtc.stopSession()
+        _hostStatus.value = HostStatus.Idle
+        RemoteHostService.stop(appContext)
+    }
+
+    fun approveIncomingConnection() {
+        val req = _incomingRequest.value ?: return
+        val pending = pendingHostHandshake ?: return
+        if (pending.sessionId != req.sessionId) return
+        _incomingRequest.value = null
+        scope.launch { finalizeHostHandshakeAck(pending) }
+    }
+
+    fun rejectIncomingConnection() {
+        val req = _incomingRequest.value ?: return
+        _incomingRequest.value = null
+        pendingHostHandshake = null
+        signaling.sendPayload(
+            JSONObject()
+                .put("type", "e2ee_reject")
+                .put("targetId", req.fromDeviceId)
+                .put("sessionId", req.sessionId)
+                .put("reason", "USER_DECLINED")
+                .put("message", "Pemilik perangkat menolak permintaan akses."),
+        )
+    }
+
+    fun connectToTarget(rawTargetId: String, sessionPassword: String) {
+        val targetId = normalizeDeviceId(rawTargetId)
+        if (targetId.length < 6) {
+            _controllerState.value = ControllerSessionState.Error("ID Perangkat minimal 6 karakter.")
+            return
+        }
+        if (sessionPassword.isBlank()) {
+            _controllerState.value = ControllerSessionState.Error("Kata sandi sesi wajib diisi.")
+            return
+        }
+
+        scope.launch {
+            val identity = preferences.ensureInitialized()
+            if (normalizeDeviceId(identity.deviceId) == targetId) {
+                _controllerState.value = ControllerSessionState.Error("Tidak dapat menghubungkan ke ID perangkat sendiri.")
+                return@launch
+            }
+            if (signaling.status.value !is SignalingStatus.Registered) {
+                val cfg = preferences.serverConfigFlow.first()
+                signaling.connect(cfg, identity.deviceId, identity.deviceAlias)
+            }
+
+            val sessionId = UUID.randomUUID().toString()
+            val init = crypto.createEphemeralInit()
+            activeControllerSession = ActiveControllerSession(
+                sessionId = sessionId,
+                targetId = targetId,
+                targetPassword = sessionPassword.trim(),
+                init = init,
+            )
+            _controllerState.value = ControllerSessionState.ConnectingSignaling(targetId)
+
+            val sent = signaling.sendPayload(
+                JSONObject()
+                    .put("type", "e2ee_hello")
+                    .put("targetId", targetId)
+                    .put("sessionId", sessionId)
+                    .put("pubKey", init.publicKeyB64)
+                    .put("nonce", init.nonceB64)
+                    .put("alias", identity.deviceAlias),
+            )
+            if (!sent) {
+                _controllerState.value = ControllerSessionState.Error(
+                    "Belum terhubung ke server signaling. Periksa URL server di tab Server.",
+                )
+                activeControllerSession = null
+            }
+        }
+    }
+
+    fun disconnectControllerSession() {
+        pingLoopJob?.cancel()
+        pingLoopJob = null
+        activeControllerSession?.let { active ->
+            sendSessionEnd(active.targetId, active.sessionId, "Pengendali mengakhiri sesi.")
+        }
+        activeControllerSession = null
+        webRtc.stopSession()
+        _controllerState.value = ControllerSessionState.Idle
+    }
+
+    fun sendTouchTap(xNorm: Float, yNorm: Float, isLongPress: Boolean = false) {
+        webRtc.sendControlPacket(RemoteControlPacket.TouchTap(xNorm, yNorm, isLongPress))
+    }
+
+    fun sendTouchSwipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 200L) {
+        webRtc.sendControlPacket(RemoteControlPacket.TouchSwipe(startX, startY, endX, endY, durationMs))
+    }
+
+    fun sendSystemAction(action: RemoteSystemAction) {
+        webRtc.sendControlPacket(RemoteControlPacket.SystemKey(action))
+    }
+
+    fun sendTextInput(text: String) {
+        if (text.isNotEmpty()) {
+            webRtc.sendControlPacket(RemoteControlPacket.TextInput(text))
+        }
+    }
+
+    fun changeStreamQuality(preset: StreamQualityPreset) {
+        scope.launch {
+            preferences.updateQualityPreset(preset)
+            webRtc.updateQualityPreset(preset)
+        }
+    }
+
+    private suspend fun handleSignalingEvent(event: SignalingEvent) {
+        when (event) {
+            is SignalingEvent.E2eeHello -> handleHostIncomingHello(event)
+            is SignalingEvent.E2eeAck -> handleControllerAck(event)
+            is SignalingEvent.E2eeReject -> handlePeerReject(event)
+            is SignalingEvent.EncryptedWebRtcOffer -> handleHostOffer(event)
+            is SignalingEvent.EncryptedWebRtcAnswer -> handleControllerAnswer(event)
+            is SignalingEvent.EncryptedIceCandidate -> handleIncomingIceCandidate(event)
+            is SignalingEvent.SessionEnded -> handleRemoteSessionEnded(event)
+            is SignalingEvent.PeerOffline -> {
+                if (activeControllerSession?.sessionId == event.sessionId) {
+                    activeControllerSession = null
+                    _controllerState.value = ControllerSessionState.Error(event.message)
+                }
+            }
+            is SignalingEvent.ServerError -> {
+                if (_controllerState.value is ControllerSessionState.ConnectingSignaling) {
+                    _controllerState.value = ControllerSessionState.Error(event.message)
+                }
+            }
+            is SignalingEvent.Registered -> Unit
+        }
+    }
+
+    private suspend fun handleHostIncomingHello(hello: SignalingEvent.E2eeHello) {
+        if (_hostStatus.value !is HostStatus.WaitingForPeer) {
+            signaling.sendPayload(
+                JSONObject()
+                    .put("type", "e2ee_reject")
+                    .put("targetId", hello.fromId)
+                    .put("sessionId", hello.sessionId)
+                    .put("reason", "HOST_NOT_READY")
+                    .put("message", "Mode Host sedang tidak aktif atau sibuk."),
+            )
+            return
+        }
+
+        val identity = preferences.ensureInitialized()
+        val hostInit = crypto.createEphemeralInit()
+        val derived = runCatching {
+            crypto.deriveSessionKeys(
+                localKeyPair = hostInit.keyPair,
+                remotePublicKeyB64 = hello.controllerPubKeyB64,
+                controllerNonceB64 = hello.controllerNonceB64,
+                hostNonceB64 = hostInit.nonceB64,
+                sessionPassword = identity.sessionPassword,
+                isController = false,
+            )
+        }.getOrNull() ?: return
+
+        val expectedClientProof = crypto.computeRoleProof(derived.authConfirmKey, "CLIENT", hello.sessionId)
+        val hostProof = crypto.computeRoleProof(derived.authConfirmKey, "HOST", hello.sessionId)
+
+        val pending = PendingHostSession(
+            sessionId = hello.sessionId,
+            fromId = hello.fromId,
+            fromAlias = hello.alias,
+            derivedKeys = derived,
+            clientProofExpected = expectedClientProof,
+            hostProof = hostProof,
+            hostInit = hostInit,
+            controllerNonceB64 = hello.controllerNonceB64,
+        )
+        pendingHostHandshake = pending
+
+        val requireVisualApproval = preferences.requireVisualApprovalFlow.first()
+        if (requireVisualApproval) {
+            _incomingRequest.value = IncomingConnectionRequest(
+                sessionId = hello.sessionId,
+                fromDeviceId = hello.fromId,
+                fromAlias = hello.alias,
+                safetyFingerprint = derived.safetyFingerprint,
+            )
+        } else {
+            finalizeHostHandshakeAck(pending)
+        }
+    }
+
+    private suspend fun finalizeHostHandshakeAck(pending: PendingHostSession) {
+        val identity = preferences.ensureInitialized()
+        signaling.sendPayload(
+            JSONObject()
+                .put("type", "e2ee_ack")
+                .put("targetId", pending.fromId)
+                .put("sessionId", pending.sessionId)
+                .put("pubKey", pending.hostInit.publicKeyB64)
+                .put("nonce", pending.hostInit.nonceB64)
+                .put("hostProof", pending.hostProof)
+                .put("alias", identity.deviceAlias),
+        )
+    }
+
+    private suspend fun handleControllerAck(ack: SignalingEvent.E2eeAck) {
+        val ctrl = activeControllerSession ?: return
+        if (ctrl.sessionId != ack.sessionId) return
+
+        _controllerState.value = ControllerSessionState.HandshakingE2ee(ctrl.targetId)
+
+        val derived = runCatching {
+            crypto.deriveSessionKeys(
+                localKeyPair = ctrl.init.keyPair,
+                remotePublicKeyB64 = ack.hostPubKeyB64,
+                controllerNonceB64 = ctrl.init.nonceB64,
+                hostNonceB64 = ack.hostNonceB64,
+                sessionPassword = ctrl.targetPassword,
+                isController = true,
+            )
+        }.getOrElse {
+            _controllerState.value = ControllerSessionState.Error("Gagal melakukan pertukaran kunci ECDH.")
+            activeControllerSession = null
+            return
+        }
+
+        val expectedHostProof = crypto.computeRoleProof(derived.authConfirmKey, "HOST", ctrl.sessionId)
+        if (!crypto.verifyProofConstantTime(expectedHostProof, ack.hostProofB64)) {
+            _controllerState.value = ControllerSessionState.Error(
+                "Kata sandi sesi salah atau verifikasi kunci E2EE gagal.",
+            )
+            activeControllerSession = null
+            return
+        }
+
+        ctrl.derivedKeys = derived
+        ctrl.targetAlias = ack.hostAlias
+        ctrl.clientProofB64 = crypto.computeRoleProof(derived.authConfirmKey, "CLIENT", ctrl.sessionId)
+        _controllerState.value = ControllerSessionState.NegotiatingIce(ctrl.targetId, derived.safetyFingerprint)
+
+        preferences.recordRecentDevice(
+            TrustedDeviceEntry(
+                deviceId = ctrl.targetId,
+                alias = ack.hostAlias,
+                lastConnectedEpochMs = System.currentTimeMillis(),
+                lastFingerprint = derived.safetyFingerprint,
+            ),
+        )
+
+        val preset = preferences.qualityPresetFlow.first()
+        webRtc.startSession(
+            iceServers = signaling.iceServers.value,
+            aesSessionKey = derived.aesSessionKey,
+            safetyFingerprint = derived.safetyFingerprint,
+            isController = true,
+            mediaProjectionIntent = null,
+            qualityPreset = preset,
+            sessionCallbacks = object : WebRtcRemoteManager.Callbacks {
+                override fun onLocalSdpCreated(sdp: SessionDescription) {
+                    val sdpJson = JSONObject()
+                        .put("sdpType", sdp.type.canonicalForm())
+                        .put("sdp", sdp.description)
+                        .toString()
+                    val enc = crypto.encryptTextToBase64(
+                        aesKey = derived.aesSessionKey,
+                        text = sdpJson,
+                        sequenceNumber = ctrl.outgoingSigSeq.getAndIncrement(),
+                        direction = E2eeCryptoEngine.DIR_CONTROLLER_TO_HOST,
+                    )
+                    signaling.sendPayload(
+                        JSONObject()
+                            .put("type", "webrtc_offer")
+                            .put("targetId", ctrl.targetId)
+                            .put("sessionId", ctrl.sessionId)
+                            .put("clientProof", ctrl.clientProofB64)
+                            .put("payload", enc),
+                    )
+                }
+
+                override fun onLocalIceCandidate(candidate: IceCandidate) {
+                    val iceJson = JSONObject()
+                        .put("sdpMid", candidate.sdpMid)
+                        .put("sdpMLineIndex", candidate.sdpMLineIndex)
+                        .put("sdp", candidate.sdp)
+                        .toString()
+                    val enc = crypto.encryptTextToBase64(
+                        aesKey = derived.aesSessionKey,
+                        text = iceJson,
+                        sequenceNumber = ctrl.outgoingSigSeq.getAndIncrement(),
+                        direction = E2eeCryptoEngine.DIR_CONTROLLER_TO_HOST,
+                    )
+                    signaling.sendPayload(
+                        JSONObject()
+                            .put("type", "webrtc_ice")
+                            .put("targetId", ctrl.targetId)
+                            .put("sessionId", ctrl.sessionId)
+                            .put("payload", enc),
+                    )
+                }
+
+                override fun onPeerConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
+                    scope.launch {
+                        when (state) {
+                            PeerConnection.PeerConnectionState.CONNECTED -> {
+                                _controllerState.value = ControllerSessionState.Connected(
+                                    targetId = ctrl.targetId,
+                                    targetAlias = ctrl.targetAlias,
+                                    telemetry = webRtc.telemetry.value.copy(
+                                        e2eeVerified = true,
+                                        safetyFingerprint = derived.safetyFingerprint,
+                                    ),
+                                )
+                                startControllerHeartbeatLoop()
+                            }
+                            PeerConnection.PeerConnectionState.FAILED,
+                            PeerConnection.PeerConnectionState.DISCONNECTED,
+                            PeerConnection.PeerConnectionState.CLOSED -> {
+                                if (_controllerState.value is ControllerSessionState.Connected ||
+                                    _controllerState.value is ControllerSessionState.NegotiatingIce
+                                ) {
+                                    disconnectControllerSession()
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                }
+
+                override fun onControlPacketReceived(packet: RemoteControlPacket) {
+                    if (packet is RemoteControlPacket.HeartbeatPong) {
+                        val rtt = (System.currentTimeMillis() - packet.echoedEpochMs).toInt()
+                        if (rtt in 1..15_000) {
+                            webRtc.updateMeasuredRtt(rtt)
+                        }
+                    }
+                }
+
+                override fun onScreenCaptureStopped() = Unit
+
+                override fun onError(message: String) {
+                    scope.launch {
+                        _controllerState.value = ControllerSessionState.Error(message)
+                    }
+                }
+            },
+        )
+        webRtc.createOffer()
+    }
+
+    private suspend fun handleHostOffer(offer: SignalingEvent.EncryptedWebRtcOffer) {
+        val pending = pendingHostHandshake ?: return
+        if (pending.sessionId != offer.sessionId) return
+
+        // Mutual password proof check before touching SDP
+        if (!crypto.verifyProofConstantTime(pending.clientProofExpected, offer.clientProofB64)) {
+            failedAuthAttempts++
+            val backoffMs = (failedAuthAttempts * 500L).coerceAtMost(4_000L)
+            delay(backoffMs)
+            signaling.sendPayload(
+                JSONObject()
+                    .put("type", "e2ee_reject")
+                    .put("targetId", offer.fromId)
+                    .put("sessionId", offer.sessionId)
+                    .put("reason", "AUTH_FAILED")
+                    .put("message", "Kata sandi sesi tidak cocok."),
+            )
+            pendingHostHandshake = null
+            return
+        }
+        failedAuthAttempts = 0
+
+        val decrypted = runCatching {
+            crypto.decryptBase64ToText(
+                aesKey = pending.derivedKeys.aesSessionKey,
+                payloadB64 = offer.encryptedSdpB64,
+                expectedDirection = E2eeCryptoEngine.DIR_CONTROLLER_TO_HOST,
+                minSequenceNumber = 1L,
+            )
+        }.getOrNull() ?: return
+
+        val sdpObj = JSONObject(decrypted.second)
+        val remoteSdp = SessionDescription(
+            SessionDescription.Type.fromCanonicalForm(sdpObj.getString("sdpType")),
+            sdpObj.getString("sdp"),
+        )
+
+        val hostSession = ActivePeerSession(
+            sessionId = pending.sessionId,
+            peerId = pending.fromId,
+            peerAlias = pending.fromAlias,
+            aesKey = pending.derivedKeys.aesSessionKey,
+            safetyFingerprint = pending.derivedKeys.safetyFingerprint,
+            expectedSigSeq = decrypted.first + 1L,
+        )
+        activeHostSession = hostSession
+        pendingHostHandshake = null
+
+        val preset = preferences.qualityPresetFlow.first()
+        webRtc.startSession(
+            iceServers = signaling.iceServers.value,
+            aesSessionKey = hostSession.aesKey,
+            safetyFingerprint = hostSession.safetyFingerprint,
+            isController = false,
+            mediaProjectionIntent = projectionIntent,
+            qualityPreset = preset,
+            sessionCallbacks = object : WebRtcRemoteManager.Callbacks {
+                override fun onLocalSdpCreated(sdp: SessionDescription) {
+                    val sdpJson = JSONObject()
+                        .put("sdpType", sdp.type.canonicalForm())
+                        .put("sdp", sdp.description)
+                        .toString()
+                    val enc = crypto.encryptTextToBase64(
+                        aesKey = hostSession.aesKey,
+                        text = sdpJson,
+                        sequenceNumber = hostSession.outgoingSigSeq.getAndIncrement(),
+                        direction = E2eeCryptoEngine.DIR_HOST_TO_CONTROLLER,
+                    )
+                    signaling.sendPayload(
+                        JSONObject()
+                            .put("type", "webrtc_answer")
+                            .put("targetId", hostSession.peerId)
+                            .put("sessionId", hostSession.sessionId)
+                            .put("payload", enc),
+                    )
+                }
+
+                override fun onLocalIceCandidate(candidate: IceCandidate) {
+                    val iceJson = JSONObject()
+                        .put("sdpMid", candidate.sdpMid)
+                        .put("sdpMLineIndex", candidate.sdpMLineIndex)
+                        .put("sdp", candidate.sdp)
+                        .toString()
+                    val enc = crypto.encryptTextToBase64(
+                        aesKey = hostSession.aesKey,
+                        text = iceJson,
+                        sequenceNumber = hostSession.outgoingSigSeq.getAndIncrement(),
+                        direction = E2eeCryptoEngine.DIR_HOST_TO_CONTROLLER,
+                    )
+                    signaling.sendPayload(
+                        JSONObject()
+                            .put("type", "webrtc_ice")
+                            .put("targetId", hostSession.peerId)
+                            .put("sessionId", hostSession.sessionId)
+                            .put("payload", enc),
+                    )
+                }
+
+                override fun onPeerConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
+                    scope.launch {
+                        when (state) {
+                            PeerConnection.PeerConnectionState.CONNECTED -> {
+                                _hostStatus.value = HostStatus.Connected(
+                                    controllerId = hostSession.peerId,
+                                    controllerAlias = hostSession.peerAlias,
+                                    telemetry = ConnectionTelemetry(
+                                        e2eeVerified = true,
+                                        safetyFingerprint = hostSession.safetyFingerprint,
+                                    ),
+                                )
+                                RemoteHostService.updateStatus(
+                                    appContext,
+                                    "Terhubung E2EE dengan ${hostSession.peerAlias}",
+                                )
+                            }
+                            PeerConnection.PeerConnectionState.DISCONNECTED,
+                            PeerConnection.PeerConnectionState.FAILED,
+                            PeerConnection.PeerConnectionState.CLOSED -> {
+                                activeHostSession = null
+                                if (_hostStatus.value is HostStatus.Connected) {
+                                    _hostStatus.value = HostStatus.WaitingForPeer()
+                                    RemoteHostService.updateStatus(appContext, "Menunggu koneksi terenkripsi E2EE…")
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                }
+
+                override fun onControlPacketReceived(packet: RemoteControlPacket) {
+                    scope.launch { executeHostControlPacket(packet) }
+                }
+
+                override fun onScreenCaptureStopped() {
+                    scope.launch { stopHostMode() }
+                }
+
+                override fun onError(message: String) {
+                    scope.launch { _hostStatus.value = HostStatus.Error(message) }
+                }
+            },
+        )
+        webRtc.setRemoteDescriptionAndMaybeAnswer(remoteSdp)
+    }
+
+    private fun handleControllerAnswer(answer: SignalingEvent.EncryptedWebRtcAnswer) {
+        val ctrl = activeControllerSession ?: return
+        if (ctrl.sessionId != answer.sessionId) return
+        val key = ctrl.derivedKeys?.aesSessionKey ?: return
+
+        val decrypted = runCatching {
+            crypto.decryptBase64ToText(
+                aesKey = key,
+                payloadB64 = answer.encryptedSdpB64,
+                expectedDirection = E2eeCryptoEngine.DIR_HOST_TO_CONTROLLER,
+                minSequenceNumber = ctrl.expectedSigSeq,
+            )
+        }.getOrNull() ?: return
+        ctrl.expectedSigSeq = decrypted.first + 1L
+
+        val sdpObj = JSONObject(decrypted.second)
+        val remoteSdp = SessionDescription(
+            SessionDescription.Type.fromCanonicalForm(sdpObj.getString("sdpType")),
+            sdpObj.getString("sdp"),
+        )
+        webRtc.setRemoteDescriptionAndMaybeAnswer(remoteSdp)
+    }
+
+    private fun handleIncomingIceCandidate(ice: SignalingEvent.EncryptedIceCandidate) {
+        val ctrl = activeControllerSession
+        if (ctrl != null && ctrl.sessionId == ice.sessionId) {
+            val key = ctrl.derivedKeys?.aesSessionKey ?: return
+            val decrypted = runCatching {
+                crypto.decryptBase64ToText(
+                    aesKey = key,
+                    payloadB64 = ice.encryptedCandidateB64,
+                    expectedDirection = E2eeCryptoEngine.DIR_HOST_TO_CONTROLLER,
+                    minSequenceNumber = ctrl.expectedSigSeq,
+                )
+            }.getOrNull() ?: return
+            ctrl.expectedSigSeq = decrypted.first + 1L
+            val obj = JSONObject(decrypted.second)
+            webRtc.addRemoteIceCandidate(
+                IceCandidate(obj.getString("sdpMid"), obj.getInt("sdpMLineIndex"), obj.getString("sdp")),
+            )
+            return
+        }
+
+        val host = activeHostSession
+        if (host != null && host.sessionId == ice.sessionId) {
+            val decrypted = runCatching {
+                crypto.decryptBase64ToText(
+                    aesKey = host.aesKey,
+                    payloadB64 = ice.encryptedCandidateB64,
+                    expectedDirection = E2eeCryptoEngine.DIR_CONTROLLER_TO_HOST,
+                    minSequenceNumber = host.expectedSigSeq,
+                )
+            }.getOrNull() ?: return
+            activeHostSession = host.copy(expectedSigSeq = decrypted.first + 1L)
+            val obj = JSONObject(decrypted.second)
+            webRtc.addRemoteIceCandidate(
+                IceCandidate(obj.getString("sdpMid"), obj.getInt("sdpMLineIndex"), obj.getString("sdp")),
+            )
+        }
+    }
+
+    private suspend fun executeHostControlPacket(packet: RemoteControlPacket) {
+        if (packet is RemoteControlPacket.HeartbeatPing) {
+            webRtc.sendControlPacket(RemoteControlPacket.HeartbeatPong(packet.sentEpochMs))
+            return
+        }
+        if (packet is RemoteControlPacket.QualityChange) {
+            webRtc.updateQualityPreset(packet.preset)
+            return
+        }
+        val allowTouch = preferences.allowTouchControlFlow.first()
+        if (!allowTouch) return
+
+        when (packet) {
+            is RemoteControlPacket.TouchTap -> {
+                AccessibilityBridge.dispatchTap(packet.xNorm, packet.yNorm, packet.isLongPress)
+            }
+            is RemoteControlPacket.TouchSwipe -> {
+                AccessibilityBridge.dispatchSwipe(
+                    packet.startX,
+                    packet.startY,
+                    packet.endX,
+                    packet.endY,
+                    packet.durationMs,
+                )
+            }
+            is RemoteControlPacket.SystemKey -> {
+                AccessibilityBridge.dispatchSystemAction(packet.action)
+            }
+            is RemoteControlPacket.TextInput -> {
+                AccessibilityBridge.dispatchTextInput(packet.text)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun handlePeerReject(reject: SignalingEvent.E2eeReject) {
+        if (activeControllerSession?.sessionId == reject.sessionId) {
+            activeControllerSession = null
+            _controllerState.value = ControllerSessionState.Error(reject.message)
+        }
+    }
+
+    private fun handleRemoteSessionEnded(ended: SignalingEvent.SessionEnded) {
+        if (activeControllerSession?.sessionId == ended.sessionId) {
+            pingLoopJob?.cancel()
+            activeControllerSession = null
+            webRtc.stopSession()
+            _controllerState.value = ControllerSessionState.Error(ended.reason)
+        } else if (activeHostSession?.sessionId == ended.sessionId) {
+            activeHostSession = null
+            webRtc.stopSession()
+            if (_hostStatus.value is HostStatus.Connected) {
+                _hostStatus.value = HostStatus.WaitingForPeer()
+                RemoteHostService.updateStatus(appContext, "Menunggu koneksi terenkripsi E2EE…")
+            }
+        }
+    }
+
+    private fun startControllerHeartbeatLoop() {
+        pingLoopJob?.cancel()
+        pingLoopJob = scope.launch {
+            while (isActive && _controllerState.value is ControllerSessionState.Connected) {
+                webRtc.sendControlPacket(RemoteControlPacket.HeartbeatPing(System.currentTimeMillis()))
+                delay(2_000L)
+            }
+        }
+    }
+
+    private fun sendSessionEnd(targetId: String, sessionId: String, reason: String) {
+        signaling.sendPayload(
+            JSONObject()
+                .put("type", "session_end")
+                .put("targetId", targetId)
+                .put("sessionId", sessionId)
+                .put("reason", reason),
+        )
+    }
+
+    companion object {
+        @Volatile
+        private var instance: RemoteSessionCoordinator? = null
+
+        fun getInstance(context: Context): RemoteSessionCoordinator {
+            return instance ?: synchronized(this) {
+                instance ?: RemoteSessionCoordinator(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+}
