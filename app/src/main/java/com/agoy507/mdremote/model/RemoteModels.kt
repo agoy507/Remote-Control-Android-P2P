@@ -23,8 +23,22 @@ data class ServerEndpointConfig(
 }
 // Kredensial ICE ephemeral yang diterima dari respons 'registered' signaling server.
 // Berlaku 1 jam (TTL dikontrol server). Client tidak perlu menyimpan password TURN.
+data class IceServerConfig(
+    val urls: List<String>,
+    val username: String = "",
+    val credential: String = "",
+) {
+    fun toPeerConnectionIceServer(): org.webrtc.PeerConnection.IceServer {
+        val builder = org.webrtc.PeerConnection.IceServer.builder(urls)
+        if (username.isNotBlank() && credential.isNotBlank()) {
+            builder.setUsername(username).setPassword(credential)
+        }
+        return builder.createIceServer()
+    }
+}
+
 data class EphemeralIceConfig(
-    val iceServers: List<org.webrtc.PeerConnection.IceServer>,
+    val iceServers: List<IceServerConfig>,
     val ttlSeconds: Int,
     val receivedAtMs: Long = System.currentTimeMillis(),
 ) {

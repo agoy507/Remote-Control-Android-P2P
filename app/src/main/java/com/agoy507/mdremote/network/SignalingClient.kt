@@ -1,6 +1,7 @@
 package com.agoy507.mdremote.network
 
 import android.util.Log
+import com.agoy507.mdremote.model.IceServerConfig
 import com.agoy507.mdremote.model.ServerEndpointConfig
 import com.agoy507.mdremote.model.ServerHealthResult
 import com.agoy507.mdremote.model.SignalingStatus
@@ -31,7 +32,7 @@ import java.util.concurrent.TimeUnit
 sealed interface SignalingEvent {
     data class Registered(
         val deviceId: String,
-        val iceServers: List<PeerConnection.IceServer>,
+        val iceServers: List<IceServerConfig>,
     ) : SignalingEvent
 
     data class E2eeHello(
@@ -110,8 +111,17 @@ class SignalingClient(
     private val _events = MutableSharedFlow<SignalingEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<SignalingEvent> = _events.asSharedFlow()
 
-    private val _iceServers = MutableStateFlow<List<PeerConnection.IceServer>>(emptyList())
-    val iceServers: StateFlow<List<PeerConnection.IceServer>> = _iceServers.asStateFlow()
+    private val _iceServers = MutableStateFlow<List<IceServerConfig>>(emptyList())
+    val iceServers: StateFlow<List<IceServerConfig>> = _iceServers.asStateFlow()
+
+    fun getPeerConnectionIceServers(): List<PeerConnection.IceServer> {
+        val configs = _iceServers.value
+        val list = configs.map { it.toPeerConnectionIceServer() }
+        if (list.isEmpty()) {
+            return listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+        }
+        return list
+    }
 
     private var webSocket: WebSocket? = null
     private var reconnectJob: Job? = null
@@ -267,12 +277,16 @@ class SignalingClient(
 
                 override fun onMessage(ws: WebSocket, text: String) {
                     if (ws !== webSocket) return
-                    handleIncomingMessage(text, config)
+                    try {
+                        handleIncomingMessage(text, config)
+                    } catch (ex: Throwable) {
+                        Log.e(TAG, "Error handling incoming signaling message: ${ex.message}", ex)
+                    }
                 }
 
                 override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
                     if (ws !== webSocket) return
-                    Log.w(TAG, "Signaling WebSocket failure: ${t.message}")
+                    Log.e(TAG, "Signaling WebSocket failure: ${t.message}", t)
                     _status.value = SignalingStatus.Error(t.message ?: "Koneksi terputus")
                     scheduleReconnect()
                 }
@@ -440,8 +454,8 @@ class SignalingClient(
     private fun parseIceServers(
         array: JSONArray?,
         config: ServerEndpointConfig,
-    ): List<PeerConnection.IceServer> {
-        val list = mutableListOf<PeerConnection.IceServer>()
+    ): List<IceServerConfig> {
+        val list = mutableListOf<IceServerConfig>()
         if (array != null) {
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
@@ -452,18 +466,14 @@ class SignalingClient(
                     }
                 }
                 if (urls.isEmpty()) continue
-                val builder = PeerConnection.IceServer.builder(urls)
                 val user = obj.optString("username")
                 val cred = obj.optString("credential")
-                if (user.isNotBlank() && cred.isNotBlank()) {
-                    builder.setUsername(user).setPassword(cred)
-                }
-                list.add(builder.createIceServer())
+                list.add(IceServerConfig(urls = urls, username = user, credential = cred))
             }
         }
         // Fallback STUN hanya jika server tidak mengirim ICE server sama sekali
         if (list.isEmpty()) {
-            list.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+            list.add(IceServerConfig(urls = listOf("stun:stun.l.google.com:19302")))
         }
         return list
     }

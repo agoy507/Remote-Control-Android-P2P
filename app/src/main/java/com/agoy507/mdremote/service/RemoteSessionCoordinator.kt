@@ -202,7 +202,11 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
     internal fun onHostServiceReady(mediaProjectionData: Intent) {
         projectionIntent = mediaProjectionData
         _hostStatus.value = HostStatus.WaitingForPeer()
-        reconnectSignaling()
+        val currentStatus = signaling.status.value
+        if (currentStatus !is SignalingStatus.Registered && currentStatus !is SignalingStatus.Connecting) {
+            Log.d("MDRemote-Coord", "Host service ready but signaling not connected ($currentStatus). Reconnecting...")
+            reconnectSignaling()
+        }
     }
 
     fun stopHostMode() {
@@ -466,7 +470,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
 
         val preset = preferences.qualityPresetFlow.first()
         webRtc.startSession(
-            iceServers = signaling.iceServers.value,
+            iceServers = signaling.getPeerConnectionIceServers(),
             aesSessionKey = derived.aesSessionKey,
             safetyFingerprint = derived.safetyFingerprint,
             isController = true,
@@ -614,7 +618,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
 
         val preset = preferences.qualityPresetFlow.first()
         webRtc.startSession(
-            iceServers = signaling.iceServers.value,
+            iceServers = signaling.getPeerConnectionIceServers(),
             aesSessionKey = hostSession.aesKey,
             safetyFingerprint = hostSession.safetyFingerprint,
             isController = false,
