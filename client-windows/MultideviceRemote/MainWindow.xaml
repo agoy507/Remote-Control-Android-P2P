@@ -14,6 +14,7 @@
 
         <!-- Remote View (saat sesi aktif) -->
         <views:RemoteView x:Name="RemoteView"
-                          Visibility="Collapsed"/>
+                          Visibility="Collapsed"
+                          OnDisconnectRequested="RemoteView_OnDisconnectRequested"/>
     </Grid>
 </Window>

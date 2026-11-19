@@ -17,8 +17,16 @@ public sealed partial class ConnectView : UserControl
 
     public void ShowError(string message)
     {
+        StatusBar.IsOpen = false;
         ErrorBar.Message = message;
         ErrorBar.IsOpen = true;
+    }
+
+    public void ShowStatus(string message)
+    {
+        ErrorBar.IsOpen = false;
+        StatusBar.Message = message;
+        StatusBar.IsOpen = true;
     }
 
     private void LoadSettings()

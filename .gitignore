@@ -16,3 +16,9 @@
 local.properties
 .env
 debug.keystore
+uploads/
+bin/
+obj/
+*.user
+*.suo
+

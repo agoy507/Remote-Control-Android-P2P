@@ -77,6 +77,12 @@
                      Severity="Error"
                      IsClosable="True"/>
 
+            <!-- Status info (connecting progress) -->
+            <InfoBar x:Name="StatusBar"
+                     IsOpen="False"
+                     Severity="Informational"
+                     IsClosable="False"/>
+
             <!-- Tombol Connect -->
             <Button x:Name="ConnectButton"
                     Content="Hubungkan"

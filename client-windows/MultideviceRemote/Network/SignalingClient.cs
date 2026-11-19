@@ -8,8 +8,17 @@ using MultideviceRemote.Model;
 namespace MultideviceRemote.Network;
 
 /// <summary>
-/// WebSocket signaling client.
-/// Mengelola koneksi ke signaling server, register, dan forward WebRTC SDP/ICE.
+/// WebSocket signaling client dengan full E2EE handshake (match Android protokol & server index.js).
+/// 
+/// Flow controller:
+///   1. ConnectAsync() → register → OnRegistered(iceConfig)
+///   2. App kirim e2ee_hello (targetId, sessionId, pubKey, nonce, alias)
+///   3. Server relay e2ee_ack dari host → OnE2eeAck
+///   4. App kirim webrtc_offer (targetId, sessionId, clientProof, payload=encryptedSdp)
+///   5. Server relay webrtc_answer (fromId, sessionId, payload=encryptedSdp) → OnAnswer
+///   6. webrtc_ice bolak-balik (targetId, sessionId, payload=encryptedIce)
+/// 
+/// Ping loop berjalan setiap 20 detik.
 /// </summary>
 public sealed class SignalingClient : IAsyncDisposable
 {
@@ -18,13 +27,16 @@ public sealed class SignalingClient : IAsyncDisposable
     private readonly string _apiToken;
     private ClientWebSocket? _ws;
     private CancellationTokenSource? _cts;
+    private Task? _pingTask;
 
     // ── Events ────────────────────────────────────────────────────────────────
     public event Action<EphemeralIceConfig>? OnRegistered;
-    public event Action<string, string>? OnOffer;        // (fromDeviceId, sdp)
-    public event Action<string, string>? OnAnswer;       // (fromDeviceId, sdp)
-    public event Action<string, string>? OnIceCandidate; // (fromDeviceId, candidateJson)
-    public event Action<string>? OnIncomingRequest;      // targetDeviceId
+    public event Action<E2eeAckPayload>? OnE2eeAck;
+    public event Action<string>? OnE2eeReject;         // reason string
+    public event Action<string, string>? OnOffer;        // (fromId, sdpEncryptedB64)
+    public event Action<string, string>? OnAnswer;       // (fromId, sdpEncryptedB64)
+    public event Action<string, string>? OnIceCandidate; // (fromId, candidateEncryptedB64)
+    public event Action<string>? OnSessionEnded;         // reason
     public event Action<string>? OnError;
     public event Action? OnDisconnected;
 
@@ -42,43 +54,62 @@ public sealed class SignalingClient : IAsyncDisposable
     public async Task ConnectAsync(string deviceId, string alias, CancellationToken ct = default)
     {
         _myDeviceId = deviceId;
+
+        if (_cts is not null)
+        {
+            await _cts.CancelAsync();
+            _cts.Dispose();
+        }
+        _ws?.Dispose();
+
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _ws = new ClientWebSocket();
 
-        // Bangun URL dengan token (sama seperti Android: append ?token=... ke URL)
         var connectUrl = BuildUrlWithToken(_signalingUrl, _apiToken);
-
         _logger.LogInformation("Connecting to signaling: {Url}", connectUrl);
         await _ws.ConnectAsync(new Uri(connectUrl), _cts.Token);
         _logger.LogInformation("Signaling connected");
 
         // Register setelah connect
-        await SendAsync(new { type = "register", deviceId, alias });
+        await SendRawAsync(new { type = "register", deviceId, alias });
 
         // Start receive loop
         _ = Task.Run(() => ReceiveLoopAsync(_cts.Token), _cts.Token);
+
+        // Start ping loop — setiap 20 detik
+        _pingTask = Task.Run(() => PingLoopAsync(_cts.Token), _cts.Token);
     }
 
-    public async Task SendOfferAsync(string targetDeviceId, string sdp, string sessionId) =>
-        await SendAsync(new { type = "webrtc_offer", targetDeviceId, sdp, sessionId });
+    // ── Signaling messages (exact matching server index.js & Android) ─────────
 
-    public async Task SendAnswerAsync(string targetDeviceId, string sdp, string sessionId) =>
-        await SendAsync(new { type = "webrtc_answer", targetDeviceId, sdp, sessionId });
+    /// <summary>Kirim e2ee_hello — awal handshake dari controller ke host.</summary>
+    public async Task SendE2eeHelloAsync(string targetId, string sessionId, string pubKeyB64, string nonceB64, string alias) =>
+        await SendRawAsync(new { type = "e2ee_hello", targetId, sessionId, pubKey = pubKeyB64, nonce = nonceB64, alias });
 
-    public async Task SendIceCandidateAsync(string targetDeviceId, string candidateJson, string sessionId) =>
-        await SendAsync(new { type = "ice_candidate", targetDeviceId, candidate = candidateJson, sessionId });
+    /// <summary>Kirim WebRTC offer terenkripsi (type: webrtc_offer, payload: encryptedSdp).</summary>
+    public async Task SendEncryptedOfferAsync(string targetId, string sessionId, string sdpEncryptedB64, string clientProofB64) =>
+        await SendRawAsync(new { type = "webrtc_offer", targetId, payload = sdpEncryptedB64, sessionId, clientProof = clientProofB64 });
 
-    public async Task SendConnectRequestAsync(string targetDeviceId, string sessionId) =>
-        await SendAsync(new { type = "connect_request", targetDeviceId, sessionId });
+    /// <summary>Kirim WebRTC ICE candidate terenkripsi (type: webrtc_ice, payload: encryptedCandidate).</summary>
+    public async Task SendEncryptedIceCandidateAsync(string targetId, string candidateEncryptedB64, string sessionId) =>
+        await SendRawAsync(new { type = "webrtc_ice", targetId, payload = candidateEncryptedB64, sessionId });
+
+    /// <summary>Kirim session_end.</summary>
+    public async Task SendSessionEndAsync(string targetId, string sessionId, string reason) =>
+        await SendRawAsync(new { type = "session_end", targetId, sessionId, reason });
 
     public async Task SendPingAsync() =>
-        await SendAsync(new { type = "ping" });
+        await SendRawAsync(new { type = "ping", ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
 
     public async Task DisconnectAsync()
     {
         await (_cts?.CancelAsync() ?? Task.CompletedTask);
-        if (_ws?.State == WebSocketState.Open)
-            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+        try
+        {
+            if (_ws?.State == WebSocketState.Open)
+                await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+        }
+        catch { /* ignore close errors */ }
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
@@ -115,6 +146,24 @@ public sealed class SignalingClient : IAsyncDisposable
         }
     }
 
+    private async Task PingLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(20), ct);
+                if (_ws?.State == WebSocketState.Open)
+                    await SendPingAsync();
+            }
+        }
+        catch (OperationCanceledException) { /* normal */ }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Ping loop error");
+        }
+    }
+
     private void HandleMessage(string json)
     {
         try
@@ -131,38 +180,68 @@ public sealed class SignalingClient : IAsyncDisposable
                     break;
 
                 case "pong":
-                    // keepalive
+                    // keepalive ack
                     break;
 
+                // ── E2EE Handshake ────────────────────────────────────────────
+                case "e2ee_ack":
+                    var ackPayload = new E2eeAckPayload(
+                        SessionId: node!["sessionId"]?.GetValue<string>() ?? "",
+                        FromId: node["fromId"]?.GetValue<string>() ?? "",
+                        HostPubKeyB64: node["pubKey"]?.GetValue<string>() ?? "",
+                        HostNonceB64: node["nonce"]?.GetValue<string>() ?? "",
+                        HostProofB64: node["hostProof"]?.GetValue<string>() ?? "",
+                        HostAlias: node["alias"]?.GetValue<string>() ?? "Host"
+                    );
+                    OnE2eeAck?.Invoke(ackPayload);
+                    break;
+
+                case "e2ee_reject":
+                    var rejectReason = node?["reason"]?.GetValue<string>()
+                        ?? node?["message"]?.GetValue<string>() ?? "Ditolak";
+                    OnE2eeReject?.Invoke(rejectReason);
+                    break;
+
+                // ── WebRTC SDP & ICE ───────────────────────────────────────────
                 case "webrtc_offer":
                     OnOffer?.Invoke(
-                        node!["fromDeviceId"]!.GetValue<string>(),
-                        node["sdp"]!.GetValue<string>()
+                        node!["fromId"]?.GetValue<string>() ?? "",
+                        node["payload"]?.GetValue<string>() ?? ""
                     );
                     break;
 
                 case "webrtc_answer":
                     OnAnswer?.Invoke(
-                        node!["fromDeviceId"]!.GetValue<string>(),
-                        node["sdp"]!.GetValue<string>()
+                        node!["fromId"]?.GetValue<string>() ?? "",
+                        node["payload"]?.GetValue<string>() ?? ""
                     );
                     break;
 
-                case "ice_candidate":
+                case "webrtc_ice":
                     OnIceCandidate?.Invoke(
-                        node!["fromDeviceId"]!.GetValue<string>(),
-                        node["candidate"]!.ToJsonString()
+                        node!["fromId"]?.GetValue<string>() ?? "",
+                        node["payload"]?.GetValue<string>() ?? ""
                     );
                     break;
 
-                case "incoming_request":
-                    OnIncomingRequest?.Invoke(node!["fromDeviceId"]!.GetValue<string>());
+                // ── Session lifecycle ──────────────────────────────────────────
+                case "session_end":
+                    var endReason = node?["reason"]?.GetValue<string>() ?? "Sesi berakhir";
+                    OnSessionEnded?.Invoke(endReason);
+                    break;
+
+                case "peer_offline":
+                    OnSessionEnded?.Invoke(node?["message"]?.GetValue<string>() ?? "Perangkat target sedang offline");
+                    break;
+
+                case "replaced":
+                    OnSessionEnded?.Invoke("Sesi digantikan oleh koneksi baru.");
                     break;
 
                 case "error":
-                    var msg = node?["message"]?.GetValue<string>() ?? "Unknown error";
-                    _logger.LogWarning("Signaling error: {Msg}", msg);
-                    OnError?.Invoke(msg);
+                    var errMsg = node?["message"]?.GetValue<string>() ?? "Kesalahan signaling.";
+                    _logger.LogWarning("Signaling error: {Msg}", errMsg);
+                    OnError?.Invoke(errMsg);
                     break;
 
                 default:
@@ -197,18 +276,16 @@ public sealed class SignalingClient : IAsyncDisposable
             }
         }
 
-        // Fallback STUN jika server tidak kirim iceServers
         if (servers.Count == 0)
         {
             _logger.LogWarning("No iceServers from server, using public STUN fallback");
             servers.Add(new IceServerEntry(new List<string> { "stun:stun.l.google.com:19302" }));
         }
 
-        // TTL: ambil dari username format "<expires>:<deviceId>" atau default 1 jam
         long expiresMs = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
         var firstTurn = servers.FirstOrDefault(s => s.Username is not null);
         if (firstTurn?.Username?.Split(':') is [var tsStr, ..] && long.TryParse(tsStr, out var ts))
-            expiresMs = ts * 1000; // server kirim epoch seconds
+            expiresMs = ts * 1000;
 
         _logger.LogInformation("Registered. {Count} ICE servers, expires ~{Dt}",
             servers.Count, DateTimeOffset.FromUnixTimeMilliseconds(expiresMs).LocalDateTime);
@@ -216,10 +293,6 @@ public sealed class SignalingClient : IAsyncDisposable
         return new EphemeralIceConfig(servers, expiresMs);
     }
 
-    /// <summary>
-    /// Append ?token= ke URL jika token tidak kosong dan belum ada di URL.
-    /// Sama persis dengan logika Android SignalingClient.
-    /// </summary>
     private static string BuildUrlWithToken(string url, string token)
     {
         if (string.IsNullOrEmpty(token)) return url;
@@ -228,7 +301,7 @@ public sealed class SignalingClient : IAsyncDisposable
         return $"{url}{sep}token={Uri.EscapeDataString(token)}";
     }
 
-    private async Task SendAsync(object message)
+    private async Task SendRawAsync(object message)
     {
         if (_ws?.State != WebSocketState.Open) return;
         var json = JsonSerializer.Serialize(message);
@@ -244,3 +317,13 @@ public sealed class SignalingClient : IAsyncDisposable
         _cts?.Dispose();
     }
 }
+
+/// <summary>Payload dari e2ee_ack (host response ke controller hello).</summary>
+public sealed record E2eeAckPayload(
+    string SessionId,
+    string FromId,
+    string HostPubKeyB64,
+    string HostNonceB64,
+    string HostProofB64,
+    string HostAlias
+);
