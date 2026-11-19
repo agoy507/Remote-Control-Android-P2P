@@ -70,22 +70,16 @@ fun ServerConfigScreen(
 ) {
     val scope = rememberCoroutineScope()
     var signalingUrl by remember { mutableStateOf(currentConfig.signalingUrl) }
-    var stunUrl by remember { mutableStateOf(currentConfig.stunUrl) }
-    var turnUrl by remember { mutableStateOf(currentConfig.turnUrl) }
     var apiToken by remember { mutableStateOf(currentConfig.serverApiToken) }
     var showDockerGuide by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentConfig) {
         signalingUrl = currentConfig.signalingUrl
-        stunUrl = currentConfig.stunUrl
-        turnUrl = currentConfig.turnUrl
         apiToken = currentConfig.serverApiToken
     }
 
     val draftConfig = ServerEndpointConfig(
         signalingUrl = signalingUrl,
-        stunUrl = stunUrl,
-        turnUrl = turnUrl,
         serverApiToken = apiToken,
     )
 
@@ -140,7 +134,7 @@ fun ServerConfigScreen(
                     value = signalingUrl,
                     onValueChange = { signalingUrl = it },
                     label = { Text("URL WebSocket Signaling") },
-                    placeholder = { Text("wss://remote.domainanda.com/ws") },
+                    placeholder = { Text("wss://remote.agoy507.my.id/ws") },
                     supportingText = { Text("Gunakan wss:// untuk produksi atau ws://IP:8080/ws di LAN/Emulator") },
                     singleLine = true,
                     modifier = Modifier
@@ -149,28 +143,37 @@ fun ServerConfigScreen(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = stunUrl,
-                    onValueChange = { stunUrl = it },
-                    label = { Text("URL STUN Tambahan") },
-                    placeholder = { Text("stun:stun.l.google.com:19302") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("stun_url_input"),
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = turnUrl,
-                    onValueChange = { turnUrl = it },
-                    label = { Text("URL TURN Manual (Opsional)") },
-                    placeholder = { Text("Otomatis diambil via HMAC dari server signaling") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("turn_url_input"),
-                )
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CloudDone,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Column {
+                            Text(
+                                text = "STUN / TURN Otomatis (Ephemeral HMAC)",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "Kredensial ICE server dinegosiasikan otomatis saat registrasi ke signaling server (TTL 1 jam). Tidak perlu input password manual.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
