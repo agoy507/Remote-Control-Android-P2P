@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -36,6 +37,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,14 +63,16 @@ import com.agoy507.mdremote.model.normalizeDeviceId
 import com.agoy507.mdremote.ui.components.E2eeShieldBadge
 import com.agoy507.mdremote.ui.components.SignalingStatusPill
 import com.agoy507.mdremote.ui.components.TacticalCard
+import com.agoy507.mdremote.ui.theme.DeepEmeraldContainer
 import com.agoy507.mdremote.ui.theme.MonoTelemetryStyle
+import com.agoy507.mdremote.ui.theme.NeonEmerald
 
 @Composable
 fun KendaliScreen(
     signalingStatus: SignalingStatus,
     controllerState: ControllerSessionState,
     recentDevices: List<TrustedDeviceEntry>,
-    onConnect: (targetId: String, password: String) -> Unit,
+    onConnect: (targetId: String, password: String, rememberPassword: Boolean) -> Unit,
     onCancelConnect: () -> Unit,
     onRemoveRecentDevice: (String) -> Unit,
     onNavigateToServer: () -> Unit,
@@ -75,6 +80,7 @@ fun KendaliScreen(
 ) {
     var targetIdInput by rememberSaveable { mutableStateOf("") }
     var passwordInput by rememberSaveable { mutableStateOf("") }
+    var rememberPassword by rememberSaveable { mutableStateOf(true) }
     var showPassword by remember { mutableStateOf(false) }
 
     val isConnecting = controllerState is ControllerSessionState.ConnectingSignaling ||
@@ -181,7 +187,52 @@ fun KendaliScreen(
                         .testTag("target_session_password_input"),
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isConnecting) { rememberPassword = !rememberPassword }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            imageVector = if (rememberPassword) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                            contentDescription = null,
+                            tint = if (rememberPassword) NeonEmerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Column {
+                            Text(
+                                text = "Simpan sandi di riwayat",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "Koneksi berikutnya otomatis terisi",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = rememberPassword,
+                        onCheckedChange = { rememberPassword = it },
+                        enabled = !isConnecting,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = NeonEmerald,
+                            checkedTrackColor = DeepEmeraldContainer,
+                        ),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 if (isConnecting) {
                     OutlinedButton(
@@ -203,7 +254,7 @@ fun KendaliScreen(
                     }
                 } else {
                     Button(
-                        onClick = { onConnect(targetIdInput, passwordInput) },
+                        onClick = { onConnect(targetIdInput, passwordInput, rememberPassword) },
                         enabled = normalizeDeviceId(targetIdInput).length >= 6 && passwordInput.isNotBlank(),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -316,6 +367,10 @@ fun KendaliScreen(
                                     .fillMaxWidth()
                                     .clickable(enabled = !isConnecting) {
                                         targetIdInput = normalizeDeviceId(entry.deviceId)
+                                        if (entry.savedPassword.isNotBlank()) {
+                                            passwordInput = entry.savedPassword
+                                            rememberPassword = true
+                                        }
                                     }
                                     .testTag("recent_device_${entry.deviceId}"),
                             ) {
@@ -339,6 +394,28 @@ fun KendaliScreen(
                                                 color = MaterialTheme.colorScheme.primary,
                                             ),
                                         )
+                                        if (entry.savedPassword.isNotBlank()) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                modifier = Modifier.padding(top = 2.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Key,
+                                                    contentDescription = null,
+                                                    tint = NeonEmerald,
+                                                    modifier = Modifier.size(12.dp),
+                                                )
+                                                Text(
+                                                    text = "Sandi Tersimpan",
+                                                    style = MonoTelemetryStyle.copy(
+                                                        fontSize = 11.sp,
+                                                        color = NeonEmerald,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    ),
+                                                )
+                                            }
+                                        }
                                         if (entry.lastFingerprint.isNotBlank()) {
                                             Text(
                                                 text = "E2EE: ${entry.lastFingerprint}",

@@ -99,6 +99,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
         val targetId: String,
         val targetPassword: String,
         val init: E2eeCryptoEngine.EphemeralHandshakeInit,
+        val rememberPassword: Boolean = true,
         var targetAlias: String = "Perangkat Target",
         var derivedKeys: E2eeCryptoEngine.DerivedSessionKeys? = null,
         var clientProofB64: String = "",
@@ -239,7 +240,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
         )
     }
 
-    fun connectToTarget(rawTargetId: String, sessionPassword: String) {
+    fun connectToTarget(rawTargetId: String, sessionPassword: String, rememberPassword: Boolean = true) {
         val targetId = normalizeDeviceId(rawTargetId)
         if (targetId.length < 6) {
             _controllerState.value = ControllerSessionState.Error("ID Perangkat minimal 6 karakter.")
@@ -268,6 +269,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                 targetId = targetId,
                 targetPassword = sessionPassword.trim(),
                 init = init,
+                rememberPassword = rememberPassword,
             )
             _controllerState.value = ControllerSessionState.ConnectingSignaling(targetId)
 
@@ -458,6 +460,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                 alias = ack.hostAlias,
                 lastConnectedEpochMs = System.currentTimeMillis(),
                 lastFingerprint = derived.safetyFingerprint,
+                savedPassword = if (ctrl.rememberPassword) ctrl.targetPassword else "",
             ),
         )
 

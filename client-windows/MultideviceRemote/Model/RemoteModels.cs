@@ -54,6 +54,8 @@ public sealed class AppSettings
     public string MyAlias { get; set; } = Environment.MachineName;
     public string ServerApiToken { get; set; } = "";
     public string LastTargetDeviceId { get; set; } = "";
+    public string LastTargetPassword { get; set; } = "";
+    public bool RememberTargetPassword { get; set; } = true;
 
     private static string GenerateDeviceId()
     {

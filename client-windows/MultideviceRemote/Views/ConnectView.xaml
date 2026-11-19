@@ -36,6 +36,18 @@
                          PlaceholderText="Contoh: ABC-DEF-123"/>
             </StackPanel>
 
+            <!-- Target Session Password -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Kata Sandi Sesi Target"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <PasswordBox x:Name="TargetPasswordBox"
+                             PlaceholderText="Masukkan kata sandi sesi host"/>
+                <CheckBox x:Name="RememberPasswordCheckBox"
+                          Content="Simpan kata sandi untuk perangkat ini"
+                          IsChecked="True"/>
+            </StackPanel>
+
             <!-- Ekspansi: Pengaturan Server -->
             <Expander Header="⚙️ Pengaturan Server" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="12" Padding="0,8,0,0">

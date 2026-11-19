@@ -125,8 +125,8 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         coordinator.rejectIncomingConnection()
     }
 
-    fun connectToTarget(targetId: String, sessionPassword: String) {
-        coordinator.connectToTarget(targetId, sessionPassword)
+    fun connectToTarget(targetId: String, sessionPassword: String, rememberPassword: Boolean = true) {
+        coordinator.connectToTarget(targetId, sessionPassword, rememberPassword)
     }
 
     fun disconnectControllerSession() {

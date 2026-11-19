@@ -38,6 +38,7 @@ data class TrustedDeviceEntry(
     val alias: String,
     val lastConnectedEpochMs: Long,
     val lastFingerprint: String = "",
+    val savedPassword: String = "",
 )
 
 @Serializable

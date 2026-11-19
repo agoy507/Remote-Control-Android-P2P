@@ -28,6 +28,8 @@ public sealed partial class ConnectView : UserControl
         SignalingUrlBox.Text = settings.SignalingUrl;
         ApiTokenBox.Password = settings.ServerApiToken;
         TargetDeviceIdBox.Text = settings.LastTargetDeviceId;
+        TargetPasswordBox.Password = settings.RememberTargetPassword ? settings.LastTargetPassword : "";
+        RememberPasswordCheckBox.IsChecked = settings.RememberTargetPassword;
     }
 
     private void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -36,6 +38,8 @@ public sealed partial class ConnectView : UserControl
 
         var myId = MyDeviceIdBox.Text.Trim();
         var targetId = TargetDeviceIdBox.Text.Trim();
+        var targetPassword = TargetPasswordBox.Password.Trim();
+        var rememberPassword = RememberPasswordCheckBox.IsChecked ?? true;
         var url = SignalingUrlBox.Text.Trim();
         var token = ApiTokenBox.Password.Trim();
 
@@ -47,6 +51,11 @@ public sealed partial class ConnectView : UserControl
         if (string.IsNullOrEmpty(targetId))
         {
             ShowError("Device ID target tidak boleh kosong.");
+            return;
+        }
+        if (string.IsNullOrEmpty(targetPassword))
+        {
+            ShowError("Kata sandi sesi target tidak boleh kosong.");
             return;
         }
         if (string.IsNullOrEmpty(url))
@@ -62,6 +71,8 @@ public sealed partial class ConnectView : UserControl
             SignalingUrl = url,
             ServerApiToken = token,
             LastTargetDeviceId = targetId,
+            LastTargetPassword = rememberPassword ? targetPassword : "",
+            RememberTargetPassword = rememberPassword,
             MyAlias = Environment.MachineName
         };
         SettingsManager.Save(settings);
@@ -77,7 +88,8 @@ public sealed partial class ConnectView : UserControl
         OnConnectRequested?.Invoke(this, new ConnectRequestEventArgs(
             SignalingUrl: signalingUrlWithToken,
             MyDeviceId: myId,
-            TargetDeviceId: targetId
+            TargetDeviceId: targetId,
+            TargetPassword: targetPassword
         ));
     }
 }

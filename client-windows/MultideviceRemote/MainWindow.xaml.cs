@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
             signalingUrl: e.SignalingUrl,
             myDeviceId: e.MyDeviceId,
             targetDeviceId: e.TargetDeviceId,
+            targetPassword: e.TargetPassword,
             swapChainPanel: RemoteView.SwapChainPanel
         );
 
@@ -51,5 +52,6 @@ public sealed partial class MainWindow : Window
 public record ConnectRequestEventArgs(
     string SignalingUrl,
     string MyDeviceId,
-    string TargetDeviceId
+    string TargetDeviceId,
+    string TargetPassword = ""
 );

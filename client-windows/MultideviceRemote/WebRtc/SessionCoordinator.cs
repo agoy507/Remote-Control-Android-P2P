@@ -22,6 +22,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
     private readonly string _signalingUrl;
     private readonly string _myDeviceId;
     private readonly string _targetDeviceId;
+    private readonly string _targetPassword;
     private readonly SwapChainPanel _swapChainPanel;
 
     private SignalingClient? _signaling;
@@ -40,11 +41,13 @@ public sealed class SessionCoordinator : IAsyncDisposable
         string signalingUrl,
         string myDeviceId,
         string targetDeviceId,
+        string targetPassword,
         SwapChainPanel swapChainPanel)
     {
         _signalingUrl = signalingUrl;
         _myDeviceId = myDeviceId;
         _targetDeviceId = targetDeviceId;
+        _targetPassword = targetPassword;
         _swapChainPanel = swapChainPanel;
         _logger = App.LoggerFactory.CreateLogger<SessionCoordinator>();
     }
