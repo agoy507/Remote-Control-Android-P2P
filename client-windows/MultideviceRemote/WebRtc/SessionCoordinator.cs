@@ -252,7 +252,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
                 type = RTCSdpType.answer,
                 sdp = sdp
             };
-            await _peerConnection.setRemoteDescription(desc);
+            _peerConnection.setRemoteDescription(desc);
             OnStatusUpdate?.Invoke("WebRTC answer terkonfigurasi. Memulai streaming…");
         }
         catch (Exception ex)
@@ -350,7 +350,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
         // 2. Video Track & Endpoint (RecvOnly)
         _renderer = new VideoFrameRenderer(_swapChainPanel);
-        _videoEndPoint = new WindowsVideoEndPoint();
+        _videoEndPoint = new WindowsVideoEndPoint(null);
 
         var videoTrack = new MediaStreamTrack(
             _videoEndPoint.GetVideoSinkFormats(),
@@ -361,10 +361,10 @@ public sealed class SessionCoordinator : IAsyncDisposable
         _peerConnection.OnVideoFrameReceived += _videoEndPoint.GotVideoFrame;
         _peerConnection.OnVideoFormatsNegotiated += formats =>
         {
-            var first = formats.FirstOrDefault();
-            if (first != null)
+            if (formats.Count > 0)
             {
-                _logger.LogInformation("Video format dinegosiasikan: {Codec}", first.FormatCodec);
+                var first = formats[0];
+                _logger.LogInformation("Video format dinegosiasikan: {Codec}", first.Codec);
                 _videoEndPoint.SetVideoSinkFormat(first);
             }
         };
@@ -429,7 +429,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
         long offerSeq = Interlocked.Increment(ref _outgoingSigSeq);
         var encryptedSdp = _crypto.EncryptTextToBase64(
-            aesKey: _sessionKeys.AesSessionKey,
+            aesKey: _sessionKeys!.AesSessionKey,
             text: sdpJson,
             sequenceNumber: offerSeq,
             direction: E2eeCryptoEngine.DirControllerToHost
@@ -467,7 +467,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
         _peerConnection?.Dispose();
         _renderer?.Dispose();
         _videoEndPoint?.Dispose();
-        _myInit?.KeyPair.Dispose();
+        _myInit?.KeyPair?.Dispose();
 
         if (_sessionKeys != null)
         {
