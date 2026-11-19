@@ -54,6 +54,9 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     val recentDevices: StateFlow<List<TrustedDeviceEntry>> = prefs.recentDevicesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val trustedControllers: StateFlow<List<TrustedDeviceEntry>> = prefs.trustedControllersFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val signalingStatus: StateFlow<SignalingStatus> = coordinator.signalingStatus
     val hostStatus: StateFlow<HostStatus> = coordinator.hostStatus
     val incomingRequest: StateFlow<IncomingConnectionRequest?> = coordinator.incomingRequest
@@ -180,5 +183,9 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     fun removeRecentDevice(deviceId: String) {
         viewModelScope.launch { prefs.removeRecentDevice(deviceId) }
+    }
+
+    fun removeTrustedController(deviceId: String) {
+        viewModelScope.launch { prefs.removeTrustedController(deviceId) }
     }
 }

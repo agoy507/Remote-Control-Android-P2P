@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PlayArrow
@@ -87,6 +88,7 @@ import com.agoy507.mdremote.R
 import com.agoy507.mdremote.model.DeviceIdentity
 import com.agoy507.mdremote.model.HostStatus
 import com.agoy507.mdremote.model.SignalingStatus
+import com.agoy507.mdremote.model.TrustedDeviceEntry
 import com.agoy507.mdremote.model.formatDeviceId
 import com.agoy507.mdremote.ui.components.AccessibilityDisclosureDialog
 import com.agoy507.mdremote.ui.components.E2eeShieldBadge
@@ -103,6 +105,7 @@ fun BerandaScreen(
     accessibilityEnabled: Boolean,
     requireVisualApproval: Boolean,
     allowTouchControl: Boolean,
+    trustedControllers: List<TrustedDeviceEntry> = emptyList(),
     snackbarHostState: SnackbarHostState,
     onRefreshPermissions: () -> Unit,
     onNavigateToServer: () -> Unit,
@@ -110,6 +113,7 @@ fun BerandaScreen(
     onUpdateCustomPassword: (String) -> Unit,
     onToggleVisualApproval: (Boolean) -> Unit,
     onToggleAllowTouchControl: (Boolean) -> Unit,
+    onRemoveTrustedController: (String) -> Unit = {},
     onStartHostWithProjection: (Intent) -> Unit,
     onStopHost: () -> Unit,
     modifier: Modifier = Modifier,
@@ -548,10 +552,14 @@ fun BerandaScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Konfirmasi Persetujuan Visual", style = MaterialTheme.typography.titleMedium)
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("Konfirmasi Pengendali Baru", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Tampilkan pop-up persetujuan & sidik jari E2EE sebelum sesi dimulai.",
+                            text = if (requireVisualApproval) {
+                                "Perangkat yang pernah terhubung otomatis disetujui. Perangkat baru memerlukan konfirmasi."
+                            } else {
+                                "Otomatis terima semua koneksi yang memasukkan kata sandi sesi yang benar."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -561,6 +569,56 @@ fun BerandaScreen(
                         onCheckedChange = onToggleVisualApproval,
                         modifier = Modifier.testTag("switch_visual_approval"),
                     )
+                }
+
+                if (trustedControllers.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "Pengendali Tepercaya (${trustedControllers.size}) • Bebas Konfirmasi",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        trustedControllers.forEach { controller ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = controller.alias,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    )
+                                    Text(
+                                        text = formatDeviceId(controller.deviceId),
+                                        style = MonoTelemetryStyle.copy(
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        ),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onRemoveTrustedController(controller.deviceId) },
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.DeleteOutline,
+                                        contentDescription = "Hapus izin otomatis",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))

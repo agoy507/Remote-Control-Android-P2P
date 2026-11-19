@@ -59,6 +59,11 @@ class AppPreferencesRepository(private val context: Context) {
         runCatching { json.decodeFromString<List<TrustedDeviceEntry>>(raw) }.getOrDefault(emptyList())
     }
 
+    val trustedControllersFlow: Flow<List<TrustedDeviceEntry>> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_TRUSTED_CONTROLLERS] ?: return@map emptyList()
+        runCatching { json.decodeFromString<List<TrustedDeviceEntry>>(raw) }.getOrDefault(emptyList())
+    }
+
     suspend fun ensureInitialized(): DeviceIdentity {
         val current = identityFlow.first()
         if (current.deviceId.isNotBlank() && current.sessionPassword.isNotBlank()) {
@@ -152,6 +157,38 @@ class AppPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun isTrustedController(deviceId: String): Boolean {
+        val cleanId = normalizeDeviceId(deviceId)
+        if (cleanId.isBlank()) return false
+        val controllers = trustedControllersFlow.first()
+        return controllers.any { normalizeDeviceId(it.deviceId) == cleanId }
+    }
+
+    suspend fun recordTrustedController(entry: TrustedDeviceEntry) {
+        val cleanId = normalizeDeviceId(entry.deviceId)
+        if (cleanId.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_TRUSTED_CONTROLLERS]?.let {
+                runCatching { json.decodeFromString<List<TrustedDeviceEntry>>(it) }.getOrNull()
+            }.orEmpty()
+            val updated = (listOf(entry.copy(deviceId = cleanId)) +
+                current.filterNot { normalizeDeviceId(it.deviceId) == cleanId })
+                .take(16)
+            prefs[KEY_TRUSTED_CONTROLLERS] = json.encodeToString(updated)
+        }
+    }
+
+    suspend fun removeTrustedController(deviceId: String) {
+        val cleanId = normalizeDeviceId(deviceId)
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_TRUSTED_CONTROLLERS]?.let {
+                runCatching { json.decodeFromString<List<TrustedDeviceEntry>>(it) }.getOrNull()
+            }.orEmpty()
+            val updated = current.filterNot { normalizeDeviceId(it.deviceId) == cleanId }
+            prefs[KEY_TRUSTED_CONTROLLERS] = json.encodeToString(updated)
+        }
+    }
+
     private fun generateNineDigitId(): String {
         val num = 100_000_000 + random.nextInt(900_000_000)
         return num.toString()
@@ -181,5 +218,6 @@ class AppPreferencesRepository(private val context: Context) {
         private val KEY_ALLOW_TOUCH_CONTROL = booleanPreferencesKey("allow_touch_control")
         private val KEY_QUALITY_PRESET = stringPreferencesKey("quality_preset")
         private val KEY_RECENT_DEVICES = stringPreferencesKey("recent_devices")
+        private val KEY_TRUSTED_CONTROLLERS = stringPreferencesKey("trusted_controllers")
     }
 }

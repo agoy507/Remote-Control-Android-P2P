@@ -227,7 +227,17 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
         val pending = pendingHostHandshake ?: return
         if (pending.sessionId != req.sessionId) return
         _incomingRequest.value = null
-        scope.launch { finalizeHostHandshakeAck(pending) }
+        scope.launch {
+            preferences.recordTrustedController(
+                TrustedDeviceEntry(
+                    deviceId = req.fromDeviceId,
+                    alias = req.fromAlias,
+                    lastConnectedEpochMs = System.currentTimeMillis(),
+                    lastFingerprint = req.safetyFingerprint,
+                )
+            )
+            finalizeHostHandshakeAck(pending)
+        }
     }
 
     fun rejectIncomingConnection() {
@@ -396,8 +406,9 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
         )
         pendingHostHandshake = pending
 
+        val isTrusted = preferences.isTrustedController(hello.fromId)
         val requireVisualApproval = preferences.requireVisualApprovalFlow.first()
-        if (requireVisualApproval) {
+        if (requireVisualApproval && !isTrusted) {
             _incomingRequest.value = IncomingConnectionRequest(
                 sessionId = hello.sessionId,
                 fromDeviceId = hello.fromId,
@@ -405,6 +416,16 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                 safetyFingerprint = derived.safetyFingerprint,
             )
         } else {
+            scope.launch {
+                preferences.recordTrustedController(
+                    TrustedDeviceEntry(
+                        deviceId = hello.fromId,
+                        alias = hello.alias,
+                        lastConnectedEpochMs = System.currentTimeMillis(),
+                        lastFingerprint = derived.safetyFingerprint,
+                    )
+                )
+            }
             finalizeHostHandshakeAck(pending)
         }
     }
@@ -615,6 +636,16 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
         )
         activeHostSession = hostSession
         pendingHostHandshake = null
+        scope.launch {
+            preferences.recordTrustedController(
+                TrustedDeviceEntry(
+                    deviceId = hostSession.peerId,
+                    alias = hostSession.peerAlias,
+                    lastConnectedEpochMs = System.currentTimeMillis(),
+                    lastFingerprint = hostSession.safetyFingerprint,
+                )
+            )
+        }
 
         val preset = preferences.qualityPresetFlow.first()
         webRtc.startSession(

@@ -95,6 +95,7 @@ fun KendaliP2PApp(
     val incomingRequest by viewModel.incomingRequest.collectAsStateWithLifecycle()
     val controllerState by viewModel.controllerState.collectAsStateWithLifecycle()
     val recentDevices by viewModel.recentDevices.collectAsStateWithLifecycle()
+    val trustedControllers by viewModel.trustedControllers.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
     val requireVisualApproval by viewModel.requireVisualApproval.collectAsStateWithLifecycle()
     val allowTouchControl by viewModel.allowTouchControl.collectAsStateWithLifecycle()
@@ -224,6 +225,7 @@ fun KendaliP2PApp(
                             accessibilityEnabled = accessibilityEnabled,
                             requireVisualApproval = requireVisualApproval,
                             allowTouchControl = allowTouchControl,
+                            trustedControllers = trustedControllers,
                             snackbarHostState = snackbarHostState,
                             onRefreshPermissions = viewModel::refreshAccessibilityStatus,
                             onNavigateToServer = { navigateTopLevel(AppRoute.ServerConfig) },
@@ -231,6 +233,7 @@ fun KendaliP2PApp(
                             onUpdateCustomPassword = viewModel::updateSessionPassword,
                             onToggleVisualApproval = viewModel::setRequireVisualApproval,
                             onToggleAllowTouchControl = viewModel::setAllowTouchControl,
+                            onRemoveTrustedController = viewModel::removeTrustedController,
                             onStartHostWithProjection = viewModel::startHostMode,
                             onStopHost = viewModel::stopHostMode,
                         )
