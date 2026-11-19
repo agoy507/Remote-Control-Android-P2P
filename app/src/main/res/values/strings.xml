@@ -9,6 +9,14 @@
     <string name="notification_host_connected">Terhubung E2EE AES-256-GCM dengan pengendali</string>
     <string name="action_stop_host">Hentikan Sesi</string>
 
+    <string name="notification_channel_standby">Layanan Latar Belakang Multidevice Remote</string>
+    <string name="notification_channel_standby_desc">Menjaga koneksi signaling tetap aktif di latar belakang agar selalu siap terhubung.</string>
+    <string name="notification_standby_title">Multidevice Remote</string>
+    <string name="notification_standby_online">Terhubung • Siap menerima koneksi</string>
+    <string name="notification_standby_connecting">Menghubungkan ke signaling server…</string>
+    <string name="notification_standby_offline">Terputus • Menghubungkan ulang…</string>
+    <string name="action_close_app">Tutup</string>
+
     <string name="nav_beranda">Beranda</string>
     <string name="nav_kendali">Kendalikan</string>
     <string name="nav_server">Server</string>

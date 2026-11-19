@@ -20,6 +20,7 @@ import com.agoy507.mdremote.model.ServerHealthResult
 import com.agoy507.mdremote.model.SignalingStatus
 import com.agoy507.mdremote.model.StreamQualityPreset
 import com.agoy507.mdremote.model.TrustedDeviceEntry
+import com.agoy507.mdremote.model.formatDeviceId
 import com.agoy507.mdremote.model.normalizeDeviceId
 import com.agoy507.mdremote.network.SignalingClient
 import com.agoy507.mdremote.network.SignalingEvent
@@ -131,6 +132,22 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
             }
         }
         registerNetworkCallback()
+        scope.launch {
+            RemoteStandbyService.start(appContext)
+        }
+        scope.launch {
+            signaling.status.collect { status ->
+                val identity = preferences.identityFlow.first()
+                val idFormatted = formatDeviceId(identity.deviceId)
+                val text = when (status) {
+                    is SignalingStatus.Registered -> "Terhubung • ID: $idFormatted"
+                    is SignalingStatus.Connecting -> "Menghubungkan ke signaling…"
+                    is SignalingStatus.Error -> "Terputus • Menghubungkan ulang…"
+                    is SignalingStatus.Disconnected -> "Standby • Offline"
+                }
+                RemoteStandbyService.updateStatus(appContext, text)
+            }
+        }
     }
 
     fun onAppForegrounded() {
