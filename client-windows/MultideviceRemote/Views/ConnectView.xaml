@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="MultideviceRemote.Views.ConnectView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    MinWidth="400">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="32" Spacing="20" MaxWidth="480"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+
+            <!-- Header -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="🖥️ Multidevice Remote"
+                           Style="{StaticResource TitleLargeTextBlockStyle}"/>
+                <TextBlock Text="PC Controller — Hubungkan ke perangkat Android"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+
+            <!-- Device ID saya -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Device ID Saya" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <TextBox x:Name="MyDeviceIdBox"
+                         PlaceholderText="Contoh: pc-a1b2c3d4"
+                         IsReadOnly="False"/>
+            </StackPanel>
+
+            <!-- Target Device ID (Android Host) -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Device ID Target (Android Host)"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <TextBox x:Name="TargetDeviceIdBox"
+                         PlaceholderText="Contoh: ABC-DEF-123"/>
+            </StackPanel>
+
+            <!-- Ekspansi: Pengaturan Server -->
+            <Expander Header="⚙️ Pengaturan Server" HorizontalAlignment="Stretch">
+                <StackPanel Spacing="12" Padding="0,8,0,0">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="URL Signaling Server"
+                                   Style="{StaticResource CaptionTextBlockStyle}"/>
+                        <TextBox x:Name="SignalingUrlBox"
+                                 Text="wss://remote.agoy507.my.id/ws"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Token Otorisasi (SERVER_API_TOKEN)"
+                                   Style="{StaticResource CaptionTextBlockStyle}"/>
+                        <PasswordBox x:Name="ApiTokenBox"
+                                     PlaceholderText="Isi token dari server (wajib jika diaktifkan)"/>
+                        <TextBlock Text="Token dikirim sebagai ?token=... di URL WebSocket."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
+
+            <!-- Error info -->
+            <InfoBar x:Name="ErrorBar"
+                     IsOpen="False"
+                     Severity="Error"
+                     IsClosable="True"/>
+
+            <!-- Tombol Connect -->
+            <Button x:Name="ConnectButton"
+                    Content="Hubungkan"
+                    Style="{StaticResource AccentButtonStyle}"
+                    HorizontalAlignment="Stretch"
+                    Height="44"
+                    Click="ConnectButton_Click"/>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

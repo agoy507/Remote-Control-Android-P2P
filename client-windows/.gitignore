@@ -1,0 +1,29 @@
+## Windows Client — Visual Studio / .NET gitignore
+
+# Build output
+bin/
+obj/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+.vs/
+
+# NuGet packages (akan di-restore saat build)
+packages/
+*.nupkg
+**/[Pp]ackages/
+
+# User settings
+AppData/
+*.userprefs
+
+# Rider
+.idea/
+
+# Debug symbols
+*.pdb
+
+# Publish output
+publish/
