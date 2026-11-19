@@ -99,14 +99,18 @@ fun ServerConfigScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp),
+                ) {
                     Text(
                         text = "Container Server P2P",
                         style = MaterialTheme.typography.headlineMedium,
                     )
                     Text(
-                        text = "Konfigurasi Node.js Signaling & coturn STUN/TURN",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Konfigurasi Signaling & coturn STUN/TURN",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

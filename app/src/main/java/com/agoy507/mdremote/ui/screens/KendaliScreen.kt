@@ -97,14 +97,18 @@ fun KendaliScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp),
+                ) {
                     Text(
                         text = "Kendalikan Perangkat",
                         style = MaterialTheme.typography.headlineMedium,
                     )
                     Text(
-                        text = "Akses layar & kontrol sentuh jarak jauh berlatensi rendah",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Akses layar & kontrol sentuh jarak jauh",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

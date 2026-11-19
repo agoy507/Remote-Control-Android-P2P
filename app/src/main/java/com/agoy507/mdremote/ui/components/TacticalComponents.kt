@@ -43,12 +43,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.agoy507.mdremote.R
 import com.agoy507.mdremote.model.IncomingConnectionRequest
 import com.agoy507.mdremote.model.SignalingStatus
 import com.agoy507.mdremote.model.formatDeviceId
+import com.agoy507.mdremote.ui.theme.AlertCoral
+import com.agoy507.mdremote.ui.theme.DeepAmberContainer
+import com.agoy507.mdremote.ui.theme.DeepCoralContainer
+import com.agoy507.mdremote.ui.theme.DeepEmeraldContainer
+import com.agoy507.mdremote.ui.theme.EmeraldSoftText
 import com.agoy507.mdremote.ui.theme.MonoTelemetryStyle
+import com.agoy507.mdremote.ui.theme.MutedSteelText
+import com.agoy507.mdremote.ui.theme.NeonEmerald
+import com.agoy507.mdremote.ui.theme.TacticalAmber
+import com.agoy507.mdremote.ui.theme.TacticalOutline
+import com.agoy507.mdremote.ui.theme.TacticalOutlineSubtle
 
 @Composable
 fun TacticalCard(
@@ -77,20 +88,44 @@ fun SignalingStatusPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dotColor by animateColorAsState(
-        targetValue = when (status) {
-            is SignalingStatus.Registered -> MaterialTheme.colorScheme.secondary
-            is SignalingStatus.Connecting -> MaterialTheme.colorScheme.tertiary
-            is SignalingStatus.Error -> MaterialTheme.colorScheme.error
-            is SignalingStatus.Disconnected -> MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        label = "statusDotColor",
-    )
-    val label = when (status) {
-        is SignalingStatus.Registered -> "Signaling Siap (${status.iceCount} ICE)"
-        is SignalingStatus.Connecting -> "Menghubungkan Signaling…"
-        is SignalingStatus.Error -> "Signaling Terputus"
-        is SignalingStatus.Disconnected -> "Signaling Offline"
+    val theme = when (status) {
+        is SignalingStatus.Registered -> {
+            val countText = if (status.iceCount > 0) " • ${status.iceCount} ICE" else ""
+            StatusTheme(
+                dot = NeonEmerald,
+                text = EmeraldSoftText,
+                label = "Online$countText",
+                bg = DeepEmeraldContainer.copy(alpha = 0.7f),
+                border = NeonEmerald.copy(alpha = 0.4f),
+            )
+        }
+        is SignalingStatus.Connecting -> {
+            StatusTheme(
+                dot = TacticalAmber,
+                text = Color(0xFFFDE68A),
+                label = "Menghubungkan…",
+                bg = DeepAmberContainer.copy(alpha = 0.7f),
+                border = TacticalAmber.copy(alpha = 0.4f),
+            )
+        }
+        is SignalingStatus.Error -> {
+            StatusTheme(
+                dot = AlertCoral,
+                text = Color(0xFFFCA5A5),
+                label = "Terputus",
+                bg = DeepCoralContainer.copy(alpha = 0.7f),
+                border = AlertCoral.copy(alpha = 0.4f),
+            )
+        }
+        is SignalingStatus.Disconnected -> {
+            StatusTheme(
+                dot = MutedSteelText,
+                text = MutedSteelText,
+                label = "Offline",
+                bg = TacticalOutlineSubtle,
+                border = TacticalOutline,
+            )
+        }
     }
 
     val pulse = rememberInfiniteTransition(label = "pulse")
@@ -104,30 +139,41 @@ fun SignalingStatusPill(
     Surface(
         onClick = onClick,
         modifier = modifier.testTag("signaling_status_pill"),
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = RoundedCornerShape(100.dp),
+        color = theme.bg,
+        border = BorderStroke(1.dp, theme.border),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(7.dp)
                     .alpha(if (status is SignalingStatus.Registered || status is SignalingStatus.Connecting) alpha else 1f)
                     .clip(CircleShape)
-                    .background(dotColor),
+                    .background(theme.dot),
             )
-            Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                text = theme.label,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = theme.text,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
+
+private data class StatusTheme(
+    val dot: Color,
+    val text: Color,
+    val label: String,
+    val bg: Color,
+    val border: Color,
+)
 
 @Composable
 fun E2eeShieldBadge(
