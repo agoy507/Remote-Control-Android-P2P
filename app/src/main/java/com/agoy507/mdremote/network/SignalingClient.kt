@@ -1,5 +1,6 @@
 package com.agoy507.mdremote.network
 
+import android.util.Log
 import com.agoy507.mdremote.model.ServerEndpointConfig
 import com.agoy507.mdremote.model.ServerHealthResult
 import com.agoy507.mdremote.model.SignalingStatus
@@ -114,6 +115,7 @@ class SignalingClient(
 
     private var webSocket: WebSocket? = null
     private var reconnectJob: Job? = null
+    private var pingJob: Job? = null
     private var activeConfig: ServerEndpointConfig? = null
     private var activeDeviceId: String = ""
     private var activeAlias: String = ""
@@ -136,8 +138,10 @@ class SignalingClient(
     fun disconnect() {
         manualDisconnect = true
         reconnectJob?.cancel()
-        webSocket?.close(1000, "Client disconnected")
+        pingJob?.cancel()
+        val ws = webSocket
         webSocket = null
+        ws?.close(1000, "Client disconnected")
         _status.value = SignalingStatus.Disconnected
     }
 
@@ -224,8 +228,13 @@ class SignalingClient(
         }
 
     private fun openSocket(config: ServerEndpointConfig, deviceId: String, alias: String) {
-        webSocket?.cancel()
+        val oldSocket = webSocket
+        webSocket = null
+        pingJob?.cancel()
+        oldSocket?.cancel()
+
         _status.value = SignalingStatus.Connecting
+        Log.d(TAG, "Opening WebSocket signaling to ${config.signalingUrl} for device $deviceId...")
 
         val fullUrl = if (config.serverApiToken.isNotBlank() && !config.signalingUrl.contains("token=")) {
             val sep = if (config.signalingUrl.contains("?")) "&" else "?"
@@ -237,56 +246,93 @@ class SignalingClient(
         val request = try {
             Request.Builder().url(fullUrl).build()
         } catch (ex: IllegalArgumentException) {
+            Log.e(TAG, "Invalid signaling URL: ${ex.message}")
             _status.value = SignalingStatus.Error("URL tidak valid: ${ex.message}")
             return
         }
 
-        webSocket = client.newWebSocket(
+        val newSocket = client.newWebSocket(
             request,
             object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) {
+                override fun onOpen(ws: WebSocket, response: Response) {
+                    if (ws !== webSocket) return
+                    Log.d(TAG, "Signaling WebSocket open. Sending register: $deviceId ($alias)")
                     val reg = JSONObject()
                         .put("type", "register")
                         .put("deviceId", deviceId)
                         .put("alias", alias)
-                    webSocket.send(reg.toString())
+                    ws.send(reg.toString())
+                    startPingLoop(ws)
                 }
 
-                override fun onMessage(webSocket: WebSocket, text: String) {
+                override fun onMessage(ws: WebSocket, text: String) {
+                    if (ws !== webSocket) return
                     handleIncomingMessage(text, config)
                 }
 
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                    if (ws !== webSocket) return
+                    Log.w(TAG, "Signaling WebSocket failure: ${t.message}")
                     _status.value = SignalingStatus.Error(t.message ?: "Koneksi terputus")
                     scheduleReconnect()
                 }
 
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                    if (ws !== webSocket) return
+                    Log.i(TAG, "Signaling WebSocket closed: code=$code, reason=$reason")
+                    pingJob?.cancel()
                     if (!manualDisconnect) {
+                        if (code == 4001) {
+                            _status.value = SignalingStatus.Error("Token server tidak valid (401)")
+                            return
+                        }
                         _status.value = SignalingStatus.Disconnected
-                        scheduleReconnect()
+                        val delay = if (code == 4002) 10_000L else 4_000L
+                        scheduleReconnect(delay)
                     }
                 }
             },
         )
+        webSocket = newSocket
     }
 
-    private fun scheduleReconnect() {
+    private fun scheduleReconnect(delayMs: Long = 4_000L) {
         if (manualDisconnect) return
         val cfg = activeConfig ?: return
         reconnectJob?.cancel()
-        reconnectJob = scope.launch {
-            delay(4_000L)
+        reconnectJob = scope.launch(Dispatchers.IO) {
+            Log.d(TAG, "Scheduling reconnect in ${delayMs}ms...")
+            delay(delayMs)
             if (isActive && !manualDisconnect) {
-                openSocket(cfg, activeDeviceId, activeAlias)
+                withContext(Dispatchers.Main) {
+                    openSocket(cfg, activeDeviceId, activeAlias)
+                }
             }
         }
+    }
+
+    private fun startPingLoop(ws: WebSocket) {
+        pingJob?.cancel()
+        pingJob = scope.launch(Dispatchers.IO) {
+            while (isActive && webSocket === ws) {
+                delay(20_000L)
+                if (webSocket === ws) {
+                    val ping = JSONObject().put("type", "ping").put("ts", System.currentTimeMillis())
+                    ws.send(ping.toString())
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "MDRemote-Signaling"
     }
 
     private fun handleIncomingMessage(raw: String, config: ServerEndpointConfig) {
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
         when (val type = json.optString("type")) {
             "registered" -> {
+                Log.d(TAG, "Signaling registered successfully! iceServers=${json.optJSONArray("iceServers")?.length() ?: 0}")
                 val parsedIce = parseIceServers(json.optJSONArray("iceServers"), config)
                 _iceServers.value = parsedIce
                 _status.value = SignalingStatus.Registered(parsedIce.size)
@@ -296,6 +342,10 @@ class SignalingClient(
                         iceServers = parsedIce,
                     ),
                 )
+            }
+            "replaced" -> {
+                Log.w(TAG, "Connection replaced by newer session: ${json.optString("message")}")
+                _status.value = SignalingStatus.Disconnected
             }
             "e2ee_hello" -> {
                 _events.tryEmit(

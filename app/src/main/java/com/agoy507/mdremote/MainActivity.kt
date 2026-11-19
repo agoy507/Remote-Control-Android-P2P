@@ -64,6 +64,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        com.agoy507.mdremote.service.RemoteSessionCoordinator.getInstance(applicationContext).onAppForegrounded()
+    }
 }
 
 private data class TopLevelNavItem(

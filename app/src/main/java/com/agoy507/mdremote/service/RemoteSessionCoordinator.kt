@@ -2,6 +2,11 @@ package com.agoy507.mdremote.service
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.util.Log
 import com.agoy507.mdremote.crypto.E2eeCryptoEngine
 import com.agoy507.mdremote.data.AppPreferencesRepository
 import com.agoy507.mdremote.model.ConnectionTelemetry
@@ -124,6 +129,37 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                     else -> Unit
                 }
             }
+        }
+        registerNetworkCallback()
+    }
+
+    fun onAppForegrounded() {
+        scope.launch {
+            val status = signaling.status.value
+            if (status !is SignalingStatus.Registered && status !is SignalingStatus.Connecting) {
+                Log.d("MDRemote-Coord", "App foregrounded, status=$status. Triggering reconnect...")
+                reconnectSignaling()
+            }
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        try {
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    val status = signaling.status.value
+                    if (status !is SignalingStatus.Registered && status !is SignalingStatus.Connecting) {
+                        Log.d("MDRemote-Coord", "Network available, status=$status. Triggering reconnect...")
+                        reconnectSignaling()
+                    }
+                }
+            })
+        } catch (ex: Exception) {
+            Log.w("MDRemote-Coord", "Failed to register NetworkCallback: ${ex.message}")
         }
     }
 
