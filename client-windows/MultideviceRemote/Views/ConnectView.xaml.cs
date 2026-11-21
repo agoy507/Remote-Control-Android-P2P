@@ -34,10 +34,10 @@ public sealed partial class ConnectView : UserControl
     private void LoadSettings()
     {
         var settings = SettingsManager.Load();
-        MyDeviceIdBox.Text = settings.MyDeviceId ?? "";
+        MyDeviceIdBox.Text = DeviceIdUtil.Format(settings.MyDeviceId);
         SignalingUrlBox.Text = settings.SignalingUrl ?? "wss://remote.agoy507.my.id/ws";
         ApiTokenBox.Password = settings.ServerApiToken ?? "";
-        TargetDeviceIdBox.Text = settings.LastTargetDeviceId ?? "";
+        TargetDeviceIdBox.Text = DeviceIdUtil.Format(settings.LastTargetDeviceId);
         TargetPasswordBox.Password = settings.RememberTargetPassword ? (settings.LastTargetPassword ?? "") : "";
         RememberPasswordCheckBox.IsChecked = settings.RememberTargetPassword;
     }
@@ -46,21 +46,26 @@ public sealed partial class ConnectView : UserControl
     {
         ErrorBar.IsOpen = false;
 
-        var myId = MyDeviceIdBox.Text.Trim();
-        var targetId = TargetDeviceIdBox.Text.Trim();
+        var myId = DeviceIdUtil.Normalize(MyDeviceIdBox.Text);
+        var targetId = DeviceIdUtil.Normalize(TargetDeviceIdBox.Text);
         var targetPassword = TargetPasswordBox.Password.Trim();
         var rememberPassword = RememberPasswordCheckBox.IsChecked ?? true;
         var url = SignalingUrlBox.Text.Trim();
         var token = ApiTokenBox.Password.Trim();
 
-        if (string.IsNullOrEmpty(myId))
+        if (myId.Length < 6)
         {
-            ShowError("Device ID saya tidak boleh kosong.");
+            ShowError("Device ID saya minimal 6 karakter.");
             return;
         }
-        if (string.IsNullOrEmpty(targetId))
+        if (targetId.Length < 6)
         {
-            ShowError("Device ID target tidak boleh kosong.");
+            ShowError("Device ID target minimal 6 karakter.");
+            return;
+        }
+        if (myId == targetId)
+        {
+            ShowError("Tidak dapat menghubungkan ke ID perangkat sendiri.");
             return;
         }
         if (string.IsNullOrEmpty(targetPassword))

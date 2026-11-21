@@ -106,7 +106,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         _stopping = false;
         _signalingUrl = signalingUrl;
         _apiToken = apiToken;
-        _myDeviceId = myDeviceId;
+        _myDeviceId = DeviceIdUtil.Normalize(myDeviceId);
         _myAlias = string.IsNullOrWhiteSpace(myAlias) ? Environment.MachineName : myAlias.Trim();
         UpdateHostOptions(hostPassword, requireVisualApproval, allowInputControl, qualityPreset, trustedControllers);
 
@@ -261,7 +261,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
             OnSignalingStateChanged?.Invoke(true);
             if (_activeSession == null)
             {
-                OnStatusChanged?.Invoke($"Standby • Siap dikendalikan (ID: {_myDeviceId})");
+                OnStatusChanged?.Invoke($"Standby • Siap dikendalikan (ID: {DeviceIdUtil.Format(_myDeviceId)})");
             }
         };
 
@@ -769,7 +769,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         OnPeerDisconnected?.Invoke(reason);
         if (IsHostRunning)
         {
-            OnStatusChanged?.Invoke($"Standby • Siap dikendalikan (ID: {_myDeviceId})");
+            OnStatusChanged?.Invoke($"Standby • Siap dikendalikan (ID: {DeviceIdUtil.Format(_myDeviceId)})");
         }
     }
 

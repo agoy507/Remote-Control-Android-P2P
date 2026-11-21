@@ -79,6 +79,27 @@ public static class DeviceIdUtil
         }
         return new string(buf[..n]);
     }
+
+    public static string Format(string? raw)
+    {
+        var clean = Normalize(raw);
+        return clean.Length == 9
+            ? $"{clean[..3]}-{clean[3..6]}-{clean[6..9]}"
+            : clean;
+    }
+
+    public static bool IsLegacyPcHexId(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var s = raw.Trim();
+        if (s.Length != 11 || !s.StartsWith("pc-", StringComparison.OrdinalIgnoreCase))
+            return false;
+        for (int i = 3; i < s.Length; i++)
+        {
+            if (!Uri.IsHexDigit(s[i])) return false;
+        }
+        return true;
+    }
 }
 
 /// <summary>App settings yang disimpan ke file.</summary>
@@ -105,9 +126,9 @@ public sealed class AppSettings
         return RandomNumberGenerator.GetString(PasswordAlphabet, 8);
     }
 
-    private static string GenerateDeviceId()
+    public static string GenerateDeviceId()
     {
-        // Format: "pc-" + 8 hex random bytes
-        return "pc-" + Convert.ToHexString(Guid.NewGuid().ToByteArray())[..8].ToLower();
+        // Format identik dengan Android: 9 digit angka (100000000..999999999)
+        return RandomNumberGenerator.GetInt32(100_000_000, 1_000_000_000).ToString();
     }
 }

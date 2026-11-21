@@ -23,11 +23,20 @@ public static class SettingsManager
             if (File.Exists(SettingsFile))
             {
                 var json = File.ReadAllText(SettingsFile);
-                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                var settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                if (string.IsNullOrWhiteSpace(settings.MyDeviceId) || DeviceIdUtil.IsLegacyPcHexId(settings.MyDeviceId))
+                {
+                    settings.MyDeviceId = AppSettings.GenerateDeviceId();
+                    Save(settings);
+                }
+                return settings;
             }
         }
         catch { /* fallback ke default */ }
-        return new AppSettings();
+
+        var created = new AppSettings();
+        Save(created);
+        return created;
     }
 
     public static void Save(AppSettings settings)

@@ -72,7 +72,7 @@ public sealed partial class HostView : UserControl
         {
             ErrorBar.IsOpen = false;
             HostStatusBar.Severity = InfoBarSeverity.Success;
-            HostStatusBar.Message = $"Tersambung dengan {peerAlias} ({peerId}) • E2EE: {fingerprint}";
+            HostStatusBar.Message = $"Tersambung dengan {peerAlias} ({DeviceIdUtil.Format(peerId)}) • E2EE: {fingerprint}";
             DisconnectPeerButton.Visibility = Visibility.Visible;
         });
 
@@ -111,14 +111,13 @@ public sealed partial class HostView : UserControl
         _dialogOpen = true;
         try
         {
-            var normalizedId = DeviceIdUtil.Normalize(req.FromDeviceId);
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
                 Title = "Permintaan Kendali Masuk",
                 Content =
                     $"Perangkat: {req.FromAlias}\n" +
-                    $"ID: {normalizedId}\n" +
+                    $"ID: {DeviceIdUtil.Format(req.FromDeviceId)}\n" +
                     $"Sidik E2EE: {req.SafetyFingerprint}\n\n" +
                     "Izinkan perangkat ini melihat layar dan mengendalikan PC Anda?",
                 PrimaryButtonText = "Izinkan",
@@ -148,7 +147,7 @@ public sealed partial class HostView : UserControl
         try
         {
             var settings = SettingsManager.Load();
-            MyDeviceIdBox.Text = settings.MyDeviceId ?? "";
+            MyDeviceIdBox.Text = DeviceIdUtil.Format(settings.MyDeviceId);
             HostPasswordBox.Password = settings.HostSessionPassword ?? "";
             RequireApprovalSwitch.IsOn = settings.RequireVisualApproval;
             AllowInputSwitch.IsOn = settings.AllowInputControl;
@@ -234,7 +233,7 @@ public sealed partial class HostView : UserControl
             var infoPanel = new StackPanel { Spacing = 2 };
             infoPanel.Children.Add(new TextBlock
             {
-                Text = string.IsNullOrWhiteSpace(item.Alias) ? item.DeviceId : $"{item.Alias} ({DeviceIdUtil.Normalize(item.DeviceId)})",
+                Text = string.IsNullOrWhiteSpace(item.Alias) ? DeviceIdUtil.Format(item.DeviceId) : $"{item.Alias} ({DeviceIdUtil.Format(item.DeviceId)})",
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
             var dt = DateTimeOffset.FromUnixTimeMilliseconds(item.LastConnectedEpochMs).LocalDateTime;
@@ -319,9 +318,14 @@ public sealed partial class HostView : UserControl
             }
 
             var settings = SaveCurrentHostSettings();
-            var myId = string.IsNullOrWhiteSpace(settings.MyDeviceId)
-                ? Environment.MachineName
-                : settings.MyDeviceId;
+            var myId = DeviceIdUtil.Normalize(settings.MyDeviceId);
+            if (myId.Length < 6)
+            {
+                myId = AppSettings.GenerateDeviceId();
+                settings.MyDeviceId = myId;
+                SettingsManager.Save(settings);
+                MyDeviceIdBox.Text = DeviceIdUtil.Format(myId);
+            }
             var myAlias = string.IsNullOrWhiteSpace(settings.MyAlias)
                 ? Environment.MachineName
                 : settings.MyAlias;

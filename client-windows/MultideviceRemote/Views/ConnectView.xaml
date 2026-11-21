@@ -23,7 +23,7 @@
                 <TextBlock Text="Device ID Saya" Style="{StaticResource CaptionTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 <TextBox x:Name="MyDeviceIdBox"
-                         PlaceholderText="Contoh: pc-a1b2c3d4"
+                         PlaceholderText="Contoh: 482-910-374"
                          IsReadOnly="False"/>
             </StackPanel>
 
@@ -33,7 +33,7 @@
                            Style="{StaticResource CaptionTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                 <TextBox x:Name="TargetDeviceIdBox"
-                         PlaceholderText="Contoh: ABC-DEF-123"/>
+                         PlaceholderText="Contoh: 482-910-374"/>
             </StackPanel>
 
             <!-- Target Session Password -->

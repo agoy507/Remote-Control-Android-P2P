@@ -68,9 +68,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
         SwapChainPanel swapChainPanel)
     {
         _signalingUrl = signalingUrl;
-        _myDeviceId = myDeviceId;
+        _myDeviceId = DeviceIdUtil.Normalize(myDeviceId);
         _myAlias = myAlias;
-        _targetDeviceId = targetDeviceId;
+        _targetDeviceId = DeviceIdUtil.Normalize(targetDeviceId);
         _targetPassword = targetPassword;
         _swapChainPanel = swapChainPanel;
         _logger = App.LoggerFactory.CreateLogger<SessionCoordinator>();
