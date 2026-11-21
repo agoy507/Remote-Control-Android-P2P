@@ -216,6 +216,8 @@ fun KanvasRemoteScreen(
         }
     }
 
+    val renderer = remember { TextureVideoRenderer(context) }
+
     // Re-clamp pan whenever viewport dimensions, frame aspect, or IME inset changes
     LaunchedEffect(viewportSize, frameWidth, frameHeight, zoom, effectiveBottomInsetPx) {
         val (bw, bh) = RemoteViewportMath.computeBaseSize(
@@ -233,6 +235,7 @@ fun KanvasRemoteScreen(
             zoom = zoom,
             bottomInsetPx = effectiveBottomInsetPx,
         )
+        renderer.updateViewportTransform(zoom, panOffset)
     }
 
     // Auto-collapse unpinned toolbar after 18s of inactivity (similar to RealVNC)
@@ -253,7 +256,6 @@ fun KanvasRemoteScreen(
         }
     }
 
-    val renderer = remember { TextureVideoRenderer(context) }
     DisposableEffect(renderer) {
         renderer.init(webRtcManager.eglBase.eglBaseContext) { w, h ->
             frameWidth = w
@@ -615,6 +617,7 @@ fun KanvasRemoteScreen(
                                         )
                                         zoom = newZoom
                                         panOffset = newPan
+                                        renderer.updateViewportTransform(newZoom, newPan)
                                         prevMultiCentroid = centroid
                                         prevMultiSpan = span
                                     }
@@ -720,6 +723,7 @@ fun KanvasRemoteScreen(
                                                 topInsetPx = latestTopInset,
                                                 bottomInsetPx = latestBottomInset,
                                             )
+                                            renderer.updateViewportTransform(zoom, panOffset)
                                             val now = System.currentTimeMillis()
                                             if (now - lastMoveSentTimeMs >= 18L) {
                                                 lastMoveSentTimeMs = now

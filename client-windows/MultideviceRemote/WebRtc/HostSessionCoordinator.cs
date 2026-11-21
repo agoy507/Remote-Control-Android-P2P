@@ -35,7 +35,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
     private string _hostPassword = "";
     private bool _requireVisualApproval = true;
     private bool _allowInputControl = true;
-    private string _qualityPreset = "BALANCED";
+    private string _qualityPreset = "SHARP_HD";
     private HashSet<string> _trustedDeviceIds = new(StringComparer.OrdinalIgnoreCase);
 
     private PendingHandshake? _pendingHandshake;

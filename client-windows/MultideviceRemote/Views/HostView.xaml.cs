@@ -162,7 +162,7 @@ public sealed partial class HostView : UserControl
             SignalingUrlBox.Text = settings.SignalingUrl ?? "wss://remote.agoy507.my.id/ws";
             ApiTokenBox.Password = settings.ServerApiToken ?? "";
 
-            var targetPreset = string.IsNullOrWhiteSpace(settings.HostQualityPreset) ? "BALANCED" : settings.HostQualityPreset;
+            var targetPreset = string.IsNullOrWhiteSpace(settings.HostQualityPreset) ? "SHARP_HD" : settings.HostQualityPreset;
             ComboBoxItem? match = null;
             foreach (var item in QualityComboBox.Items.OfType<ComboBoxItem>())
             {

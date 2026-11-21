@@ -51,7 +51,7 @@ class AppPreferencesRepository(private val context: Context) {
 
     val qualityPresetFlow: Flow<StreamQualityPreset> = context.dataStore.data.map { prefs ->
         val raw = prefs[KEY_QUALITY_PRESET]
-        StreamQualityPreset.entries.firstOrNull { it.name == raw } ?: StreamQualityPreset.ULTRA_LOW_LATENCY
+        StreamQualityPreset.entries.firstOrNull { it.name == raw } ?: StreamQualityPreset.SHARP_HD
     }
 
     val recentDevicesFlow: Flow<List<TrustedDeviceEntry>> = context.dataStore.data.map { prefs ->

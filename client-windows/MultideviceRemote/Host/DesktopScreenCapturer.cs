@@ -1,17 +1,27 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using SIPSorceryMedia.Abstractions;
 using SIPSorceryMedia.Encoders;
+using SIPSorceryMedia.Encoders.Codecs;
+using vpxmd;
 
 namespace MultideviceRemote.Host;
 
 /// <summary>
 /// Menangkap layar desktop Windows utama via Win32 GDI (termasuk kursor)
-/// dan meng-encode menjadi frame VP8 menggunakan SIPSorceryMedia.Encoders.
+/// dan meng-encode menjadi frame VP8 menggunakan SIPSorceryMedia.Encoders
+/// dengan tuning libvpx (VpxCodecEncConfigSet) untuk ketajaman teks tinggi.
 /// </summary>
 public sealed class DesktopScreenCapturer : IDisposable
 {
+    private static readonly FieldInfo? Vp8EncoderField =
+        typeof(VpxVideoEncoder).GetField("_vp8Encoder", BindingFlags.NonPublic | BindingFlags.Instance);
+
+    private static readonly FieldInfo? VpxEncodeCtxField =
+        typeof(Vp8Codec).GetField("_vpxEncodeCtx", BindingFlags.NonPublic | BindingFlags.Instance);
+
     private readonly ILogger<DesktopScreenCapturer> _logger;
     private readonly object _encoderLock = new();
     private readonly object _stateLock = new();
@@ -25,6 +35,8 @@ public sealed class DesktopScreenCapturer : IDisposable
     private int _maxLongEdge;
     private int _fps;
     private uint _targetKbps;
+    private uint _minQuantizer;
+    private uint _maxQuantizer;
     private volatile bool _forceNextKeyFrame = true;
 
     private int _lastWidth;
@@ -32,11 +44,11 @@ public sealed class DesktopScreenCapturer : IDisposable
 
     public event Action<uint, byte[]>? OnEncodedVideoFrame;
 
-    public DesktopScreenCapturer(string qualityPreset = "BALANCED")
+    public DesktopScreenCapturer(string qualityPreset = "SHARP_HD")
     {
         _logger = App.LoggerFactory.CreateLogger<DesktopScreenCapturer>();
-        _qualityPreset = qualityPreset;
-        ApplyPresetValues(qualityPreset, out _maxLongEdge, out _fps, out _targetKbps);
+        _qualityPreset = string.IsNullOrWhiteSpace(qualityPreset) ? "SHARP_HD" : qualityPreset;
+        ApplyPresetValues(_qualityPreset, out _maxLongEdge, out _fps, out _targetKbps, out _minQuantizer, out _maxQuantizer);
         _encoder = new VpxVideoEncoder { TargetKbps = _targetKbps };
     }
 
@@ -87,22 +99,28 @@ public sealed class DesktopScreenCapturer : IDisposable
 
     public void UpdateQualityPreset(string preset)
     {
-        ApplyPresetValues(preset, out int edge, out int fps, out uint kbps);
+        ApplyPresetValues(preset, out int edge, out int fps, out uint kbps, out uint minQ, out uint maxQ);
         lock (_encoderLock)
         {
             if (_disposed) return;
             _qualityPreset = preset;
             _maxLongEdge = edge;
             _fps = fps;
-            if (_targetKbps != kbps)
+            if (_targetKbps != kbps || _minQuantizer != minQ || _maxQuantizer != maxQ)
             {
                 _targetKbps = kbps;
+                _minQuantizer = minQ;
+                _maxQuantizer = maxQ;
                 RecreateEncoderLocked();
+                if (_lastWidth > 0 && _lastHeight > 0)
+                {
+                    ConfigureVp8EncoderLocked(_lastWidth, _lastHeight);
+                }
             }
             _forceNextKeyFrame = true;
         }
-        _logger.LogInformation("Kualitas host diubah ke {Preset} (maxEdge={Edge}, fps={Fps}, kbps={Kbps})",
-            preset, edge, fps, kbps);
+        _logger.LogInformation("Kualitas host diubah ke {Preset} (maxEdge={Edge}, fps={Fps}, kbps={Kbps}, Q={MinQ}..{MaxQ})",
+            preset, edge, fps, kbps, minQ, maxQ);
     }
 
     public void ForceKeyFrame()
@@ -124,29 +142,87 @@ public sealed class DesktopScreenCapturer : IDisposable
         _encoder.ForceKeyFrame();
     }
 
-    private static void ApplyPresetValues(string preset, out int maxLongEdge, out int fps, out uint targetKbps)
+    /// <summary>
+    /// SIPSorceryMedia.Encoders 8.0.7 mengabaikan TargetKbps (tertahan di default libvpx 256 kbps, maxQ=63).
+    /// Method ini menginisialisasi Vp8Codec dan menyetel VpxCodecEncCfg secara langsung via vpx_encoder.VpxCodecEncConfigSet
+    /// agar teks desktop di-encode tajam (PSNR ~48-56 dB) sejak frame pertama.
+    /// </summary>
+    private void ConfigureVp8EncoderLocked(int width, int height)
+    {
+        if (width <= 0 || height <= 0 || Vp8EncoderField == null || VpxEncodeCtxField == null)
+            return;
+
+        try
+        {
+            var vp8 = Vp8EncoderField.GetValue(_encoder) as Vp8Codec;
+            if (vp8 == null)
+            {
+                vp8 = new Vp8Codec();
+                vp8.InitialiseEncoder((uint)width, (uint)height, _targetKbps);
+                Vp8EncoderField.SetValue(_encoder, vp8);
+            }
+
+            if (VpxEncodeCtxField.GetValue(vp8) is VpxCodecCtx ctx && ctx.config.Enc is VpxCodecEncCfg cfg)
+            {
+                cfg.RcTargetBitrate = _targetKbps;
+                cfg.RcMinQuantizer = _minQuantizer;
+                cfg.RcMaxQuantizer = _maxQuantizer;
+                cfg.GThreads = (uint)Math.Clamp(Environment.ProcessorCount, 2, 8);
+                cfg.RcEndUsage = VpxRcMode.VPX_VBR;
+                cfg.RcUndershootPct = 100;
+                cfg.RcOvershootPct = 100;
+                cfg.RcDropframeThresh = 0;
+                cfg.RcResizeAllowed = 0;
+
+                var err = vpx_encoder.VpxCodecEncConfigSet(ctx, cfg);
+                _logger.LogInformation(
+                    "VP8 encoder dikonfigurasi ({W}x{H}, bitrate={Kbps}kbps, Q={MinQ}..{MaxQ}, threads={Threads}) => {Err}",
+                    width, height, _targetKbps, _minQuantizer, _maxQuantizer, cfg.GThreads, err);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gagal menyetel parameter lanjutan VpxCodecEncCfg");
+        }
+    }
+
+    private static void ApplyPresetValues(
+        string preset,
+        out int maxLongEdge,
+        out int fps,
+        out uint targetKbps,
+        out uint minQuantizer,
+        out uint maxQuantizer)
     {
         switch (preset?.Trim().ToUpperInvariant())
         {
             case "SHARP_HD":
                 maxLongEdge = 1920;
-                fps = 20;
-                targetKbps = 5500;
+                fps = 24;
+                targetKbps = 8000;
+                minQuantizer = 2;
+                maxQuantizer = 10;
                 break;
             case "ULTRA_LOW_LATENCY":
-                maxLongEdge = 1440;
+                maxLongEdge = 1920;
                 fps = 30;
-                targetKbps = 4000;
+                targetKbps = 5500;
+                minQuantizer = 2;
+                maxQuantizer = 14;
                 break;
             case "DATA_SAVER":
-                maxLongEdge = 1280;
+                maxLongEdge = 1366;
                 fps = 15;
-                targetKbps = 1200;
+                targetKbps = 2000;
+                minQuantizer = 4;
+                maxQuantizer = 24;
                 break;
             default: // BALANCED
                 maxLongEdge = 1920;
-                fps = 20;
-                targetKbps = 3500;
+                fps = 24;
+                targetKbps = 6000;
+                minQuantizer = 2;
+                maxQuantizer = 12;
                 break;
         }
     }
@@ -283,6 +359,7 @@ public sealed class DesktopScreenCapturer : IDisposable
                                     }
                                     _lastWidth = targetW;
                                     _lastHeight = targetH;
+                                    ConfigureVp8EncoderLocked(targetW, targetH);
                                     _forceNextKeyFrame = true;
                                 }
 
