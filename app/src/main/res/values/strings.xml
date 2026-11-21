@@ -35,4 +35,8 @@
     <string name="cd_remote_quality">Atur kualitas dan latensi streaming video</string>
     <string name="cd_remote_disconnect">Akhiri sesi remote</string>
     <string name="cd_toggle_hud">Tampilkan atau sembunyikan panel telemetri</string>
+    <string name="cd_remote_mode_toggle">Ubah mode kontrol antara Touchpad dan Touch</string>
+    <string name="cd_remote_mouse_overlay">Tampilkan atau sembunyikan tombol mouse</string>
+    <string name="cd_remote_help">Panduan gestur kontrol remote</string>
+    <string name="cd_remote_pin_toolbar">Sematkan atau lepaskan toolbar otomatis</string>
 </resources>

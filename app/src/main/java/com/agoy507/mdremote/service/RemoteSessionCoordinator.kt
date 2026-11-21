@@ -14,6 +14,8 @@ import com.agoy507.mdremote.model.ControllerSessionState
 import com.agoy507.mdremote.model.HostStatus
 import com.agoy507.mdremote.model.IncomingConnectionRequest
 import com.agoy507.mdremote.model.RemoteControlPacket
+import com.agoy507.mdremote.model.RemoteMouseAction
+import com.agoy507.mdremote.model.RemoteMouseButton
 import com.agoy507.mdremote.model.RemoteSystemAction
 import com.agoy507.mdremote.model.ServerEndpointConfig
 import com.agoy507.mdremote.model.ServerHealthResult
@@ -67,6 +69,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
     private var projectionIntent: Intent? = null
     private var pendingHostHandshake: PendingHostSession? = null
     private var activeHostSession: ActivePeerSession? = null
+    private var androidDragStart: Pair<Float, Float>? = null
     private var failedAuthAttempts = 0
 
     // Active Controller session state
@@ -322,6 +325,35 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
 
     fun sendTouchSwipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 200L) {
         webRtc.sendControlPacket(RemoteControlPacket.TouchSwipe(startX, startY, endX, endY, durationMs))
+    }
+
+    fun sendMouseMove(xNorm: Float, yNorm: Float) {
+        webRtc.sendControlPacket(RemoteControlPacket.MouseMove(xNorm, yNorm))
+    }
+
+    fun sendMouseButton(
+        xNorm: Float,
+        yNorm: Float,
+        button: RemoteMouseButton,
+        action: RemoteMouseAction,
+    ) {
+        webRtc.sendControlPacket(RemoteControlPacket.MouseButton(xNorm, yNorm, button, action))
+    }
+
+    fun sendMouseScroll(xNorm: Float, yNorm: Float, deltaX: Float, deltaY: Float) {
+        webRtc.sendControlPacket(RemoteControlPacket.MouseScroll(xNorm, yNorm, deltaX, deltaY))
+    }
+
+    fun sendKeyEvent(
+        key: String,
+        ctrl: Boolean = false,
+        alt: Boolean = false,
+        shift: Boolean = false,
+        meta: Boolean = false,
+    ) {
+        if (key.isNotBlank()) {
+            webRtc.sendControlPacket(RemoteControlPacket.KeyEvent(key, ctrl, alt, shift, meta))
+        }
     }
 
     fun sendSystemAction(action: RemoteSystemAction) {
@@ -718,6 +750,7 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                             PeerConnection.PeerConnectionState.FAILED,
                             PeerConnection.PeerConnectionState.CLOSED -> {
                                 activeHostSession = null
+                                androidDragStart = null
                                 if (_hostStatus.value is HostStatus.Connected) {
                                     _hostStatus.value = HostStatus.WaitingForPeer()
                                     RemoteHostService.updateStatus(appContext, "Menunggu koneksi terenkripsi E2EE…")
@@ -829,6 +862,56 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                     packet.endY,
                     packet.durationMs,
                 )
+            }
+            is RemoteControlPacket.MouseMove -> Unit
+            is RemoteControlPacket.MouseButton -> {
+                when (packet.button) {
+                    RemoteMouseButton.LEFT -> when (packet.action) {
+                        RemoteMouseAction.CLICK -> {
+                            AccessibilityBridge.dispatchTap(packet.xNorm, packet.yNorm, false)
+                        }
+                        RemoteMouseAction.DOUBLE_CLICK -> {
+                            AccessibilityBridge.dispatchTap(packet.xNorm, packet.yNorm, false)
+                            delay(80L)
+                            AccessibilityBridge.dispatchTap(packet.xNorm, packet.yNorm, false)
+                        }
+                        RemoteMouseAction.DOWN -> {
+                            androidDragStart = packet.xNorm to packet.yNorm
+                        }
+                        RemoteMouseAction.UP -> {
+                            val start = androidDragStart
+                            androidDragStart = null
+                            if (start != null) {
+                                AccessibilityBridge.dispatchSwipe(
+                                    start.first,
+                                    start.second,
+                                    packet.xNorm,
+                                    packet.yNorm,
+                                    200L,
+                                )
+                            }
+                        }
+                    }
+                    RemoteMouseButton.RIGHT -> if (packet.action == RemoteMouseAction.CLICK) {
+                        AccessibilityBridge.dispatchTap(packet.xNorm, packet.yNorm, true)
+                    }
+                    RemoteMouseButton.MIDDLE -> if (packet.action == RemoteMouseAction.CLICK) {
+                        AccessibilityBridge.dispatchSystemAction(RemoteSystemAction.HOME)
+                    }
+                }
+            }
+            is RemoteControlPacket.MouseScroll -> {
+                val endX = (packet.xNorm + packet.deltaX * 0.12f).coerceIn(0.05f, 0.95f)
+                val endY = (packet.yNorm + packet.deltaY * 0.16f).coerceIn(0.05f, 0.95f)
+                AccessibilityBridge.dispatchSwipe(packet.xNorm, packet.yNorm, endX, endY, 180L)
+            }
+            is RemoteControlPacket.KeyEvent -> {
+                when (packet.key.trim().uppercase()) {
+                    "BACKSPACE" -> AccessibilityBridge.dispatchBackspace()
+                    "ENTER" -> AccessibilityBridge.dispatchTextInput("\n")
+                    "ESCAPE" -> AccessibilityBridge.dispatchSystemAction(RemoteSystemAction.BACK)
+                    "WIN", "HOME" -> AccessibilityBridge.dispatchSystemAction(RemoteSystemAction.HOME)
+                }
             }
             is RemoteControlPacket.SystemKey -> {
                 AccessibilityBridge.dispatchSystemAction(packet.action)

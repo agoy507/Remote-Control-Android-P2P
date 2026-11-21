@@ -35,8 +35,8 @@ import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
-import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoCapturer
+import org.webrtc.VideoSink
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import java.nio.ByteBuffer
@@ -67,7 +67,7 @@ class WebRtcRemoteManager(
     private var localVideoSender: RtpSender? = null
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
     private var remoteVideoTrack: VideoTrack? = null
-    private var attachedRenderer: SurfaceViewRenderer? = null
+    private var attachedRenderer: VideoSink? = null
 
     private var aesKey: SecretKey? = null
     private var isControllerRole: Boolean = false
@@ -296,14 +296,14 @@ class WebRtcRemoteManager(
         peerConnection?.addIceCandidate(candidate)
     }
 
-    fun attachVideoRenderer(renderer: SurfaceViewRenderer) {
-        attachedRenderer = renderer
-        remoteVideoTrack?.addSink(renderer)
+    fun attachVideoRenderer(sink: VideoSink) {
+        attachedRenderer = sink
+        remoteVideoTrack?.addSink(sink)
     }
 
-    fun detachVideoRenderer(renderer: SurfaceViewRenderer) {
-        if (attachedRenderer === renderer) {
-            remoteVideoTrack?.removeSink(renderer)
+    fun detachVideoRenderer(sink: VideoSink) {
+        if (attachedRenderer === sink) {
+            remoteVideoTrack?.removeSink(sink)
             attachedRenderer = null
         }
     }

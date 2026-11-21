@@ -178,6 +178,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         {
             DisposeActiveSessionResources(session);
         }
+        _injector.ReleaseHeldButtons();
 
         ClearPendingHandshake(disposeAll: true);
         var sig = _signaling;
@@ -209,6 +210,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         }
 
         DisposeActiveSessionResources(session);
+        _injector.ReleaseHeldButtons();
         OnPeerDisconnected?.Invoke(reason);
         if (IsHostRunning)
         {
@@ -766,6 +768,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         if (session == null) return;
 
         DisposeActiveSessionResources(session);
+        _injector.ReleaseHeldButtons();
         OnPeerDisconnected?.Invoke(reason);
         if (IsHostRunning)
         {

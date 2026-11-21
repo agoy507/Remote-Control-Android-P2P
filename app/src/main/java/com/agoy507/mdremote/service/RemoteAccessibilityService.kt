@@ -66,6 +66,9 @@ object AccessibilityBridge {
 
     fun dispatchTextInput(text: String): Boolean =
         activeService?.performRemoteTextInput(text) ?: false
+
+    fun dispatchBackspace(): Boolean =
+        activeService?.performRemoteBackspace() ?: false
 }
 
 class RemoteAccessibilityService : AccessibilityService() {
@@ -145,6 +148,20 @@ class RemoteAccessibilityService : AccessibilityService() {
             putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 existing + text,
+            )
+        }
+        return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    fun performRemoteBackspace(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: findFirstEditableNode(root) ?: return false
+        val existing = focused.text?.toString().orEmpty()
+        if (existing.isEmpty()) return false
+        val args = Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                existing.dropLast(1),
             )
         }
         return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)

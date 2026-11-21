@@ -19,6 +19,10 @@ public enum RemoteSystemAction
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(TouchTapPacket), typeDiscriminator: "tap")]
 [JsonDerivedType(typeof(TouchSwipePacket), typeDiscriminator: "swipe")]
+[JsonDerivedType(typeof(MouseMovePacket), typeDiscriminator: "mouse_move")]
+[JsonDerivedType(typeof(MouseButtonPacket), typeDiscriminator: "mouse_btn")]
+[JsonDerivedType(typeof(MouseScrollPacket), typeDiscriminator: "scroll")]
+[JsonDerivedType(typeof(KeyEventPacket), typeDiscriminator: "key")]
 [JsonDerivedType(typeof(SystemKeyPacket), typeDiscriminator: "sys")]
 [JsonDerivedType(typeof(TextInputPacket), typeDiscriminator: "text")]
 [JsonDerivedType(typeof(QualityChangePacket), typeDiscriminator: "quality")]
@@ -31,6 +35,18 @@ public abstract record RemoteControlPacket
 
     public static RemoteControlPacket Swipe(float startX, float startY, float endX, float endY, long durationMs = 220L) =>
         new TouchSwipePacket(startX, startY, endX, endY, durationMs);
+
+    public static RemoteControlPacket MouseMove(float xNorm, float yNorm) =>
+        new MouseMovePacket(xNorm, yNorm);
+
+    public static RemoteControlPacket MouseButton(float xNorm, float yNorm, string button, string action) =>
+        new MouseButtonPacket(xNorm, yNorm, button, action);
+
+    public static RemoteControlPacket MouseScroll(float xNorm, float yNorm, float deltaX, float deltaY) =>
+        new MouseScrollPacket(xNorm, yNorm, deltaX, deltaY);
+
+    public static RemoteControlPacket KeyEvent(string key, bool ctrl = false, bool alt = false, bool shift = false, bool meta = false) =>
+        new KeyEventPacket(key, ctrl, alt, shift, meta);
 
     public static RemoteControlPacket SystemKey(RemoteSystemAction action) =>
         new SystemKeyPacket(action.ToString());
@@ -62,6 +78,33 @@ public sealed record TouchSwipePacket(
     [property: JsonPropertyName("durationMs")] long DurationMs = 220L
 ) : RemoteControlPacket;
 
+public sealed record MouseMovePacket(
+    [property: JsonPropertyName("xNorm")] float XNorm,
+    [property: JsonPropertyName("yNorm")] float YNorm
+) : RemoteControlPacket;
+
+public sealed record MouseButtonPacket(
+    [property: JsonPropertyName("xNorm")] float XNorm,
+    [property: JsonPropertyName("yNorm")] float YNorm,
+    [property: JsonPropertyName("button")] string Button,
+    [property: JsonPropertyName("action")] string Action
+) : RemoteControlPacket;
+
+public sealed record MouseScrollPacket(
+    [property: JsonPropertyName("xNorm")] float XNorm,
+    [property: JsonPropertyName("yNorm")] float YNorm,
+    [property: JsonPropertyName("deltaX")] float DeltaX,
+    [property: JsonPropertyName("deltaY")] float DeltaY
+) : RemoteControlPacket;
+
+public sealed record KeyEventPacket(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("ctrl")] bool Ctrl = false,
+    [property: JsonPropertyName("alt")] bool Alt = false,
+    [property: JsonPropertyName("shift")] bool Shift = false,
+    [property: JsonPropertyName("meta")] bool Meta = false
+) : RemoteControlPacket;
+
 public sealed record SystemKeyPacket(
     [property: JsonPropertyName("action")] string Action
 ) : RemoteControlPacket;
@@ -89,6 +132,7 @@ public static class ControlPacketCodec
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
     };
 
     public static byte[] Encode(RemoteControlPacket packet) =>

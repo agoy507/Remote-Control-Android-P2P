@@ -3,6 +3,8 @@ package com.agoy507.mdremote
 import com.agoy507.mdremote.crypto.E2eeCryptoEngine
 import com.agoy507.mdremote.model.ControlPacketCodec
 import com.agoy507.mdremote.model.RemoteControlPacket
+import com.agoy507.mdremote.model.RemoteMouseAction
+import com.agoy507.mdremote.model.RemoteMouseButton
 import com.agoy507.mdremote.model.RemoteSystemAction
 import com.agoy507.mdremote.model.StreamQualityPreset
 import com.agoy507.mdremote.model.formatDeviceId
@@ -131,6 +133,10 @@ class E2eeCryptoAndProtocolTest {
 
         val packets = listOf(
             RemoteControlPacket.TouchSwipe(0.1f, 0.8f, 0.1f, 0.2f, 240L),
+            RemoteControlPacket.MouseMove(0.55f, 0.35f),
+            RemoteControlPacket.MouseButton(0.25f, 0.75f, RemoteMouseButton.RIGHT, RemoteMouseAction.CLICK),
+            RemoteControlPacket.MouseScroll(0.5f, 0.5f, -1f, 2f),
+            RemoteControlPacket.KeyEvent("TAB", ctrl = false, alt = true, shift = false, meta = false),
             RemoteControlPacket.SystemKey(RemoteSystemAction.HOME),
             RemoteControlPacket.TextInput("Halo KendaliP2P"),
             RemoteControlPacket.QualityChange(StreamQualityPreset.BALANCED),
@@ -138,8 +144,23 @@ class E2eeCryptoAndProtocolTest {
             RemoteControlPacket.HeartbeatPong(1700000000L),
         )
         for (pkt in packets) {
-            val roundtrip = ControlPacketCodec.decode(ControlPacketCodec.encode(pkt))
+            val encoded = ControlPacketCodec.encode(pkt)
+            val roundtrip = ControlPacketCodec.decode(encoded)
             assertEquals(pkt, roundtrip)
         }
+
+        val moveJson = ControlPacketCodec.encode(RemoteControlPacket.MouseMove(0.5f, 0.5f)).decodeToString()
+        val btnJson = ControlPacketCodec.encode(
+            RemoteControlPacket.MouseButton(0.5f, 0.5f, RemoteMouseButton.LEFT, RemoteMouseAction.DOWN),
+        ).decodeToString()
+        val scrollJson = ControlPacketCodec.encode(RemoteControlPacket.MouseScroll(0.5f, 0.5f, 0f, -1f)).decodeToString()
+        val keyJson = ControlPacketCodec.encode(
+            RemoteControlPacket.KeyEvent("C", ctrl = true),
+        ).decodeToString()
+
+        assertTrue(moveJson.contains("\"kind\":\"mouse_move\""))
+        assertTrue(btnJson.contains("\"kind\":\"mouse_btn\""))
+        assertTrue(scrollJson.contains("\"kind\":\"scroll\""))
+        assertTrue(keyJson.contains("\"kind\":\"key\""))
     }
 }
