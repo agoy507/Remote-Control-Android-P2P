@@ -32,11 +32,11 @@ public sealed partial class ConnectView : UserControl
     private void LoadSettings()
     {
         var settings = SettingsManager.Load();
-        MyDeviceIdBox.Text = settings.MyDeviceId;
-        SignalingUrlBox.Text = settings.SignalingUrl;
-        ApiTokenBox.Password = settings.ServerApiToken;
-        TargetDeviceIdBox.Text = settings.LastTargetDeviceId;
-        TargetPasswordBox.Password = settings.RememberTargetPassword ? settings.LastTargetPassword : "";
+        MyDeviceIdBox.Text = settings.MyDeviceId ?? "";
+        SignalingUrlBox.Text = settings.SignalingUrl ?? "wss://remote.agoy507.my.id/ws";
+        ApiTokenBox.Password = settings.ServerApiToken ?? "";
+        TargetDeviceIdBox.Text = settings.LastTargetDeviceId ?? "";
+        TargetPasswordBox.Password = settings.RememberTargetPassword ? (settings.LastTargetPassword ?? "") : "";
         RememberPasswordCheckBox.IsChecked = settings.RememberTargetPassword;
     }
 

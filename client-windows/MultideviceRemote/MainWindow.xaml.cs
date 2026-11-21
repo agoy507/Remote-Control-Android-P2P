@@ -14,7 +14,11 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 650));
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+        if (File.Exists(iconPath))
+        {
+            AppWindow.SetIcon(iconPath);
+        }
     }
 
     private async void ConnectView_OnConnectRequested(object sender, ConnectRequestEventArgs e)
