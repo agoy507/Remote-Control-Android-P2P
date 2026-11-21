@@ -21,6 +21,7 @@ public enum RemoteSystemAction
 [JsonDerivedType(typeof(TouchSwipePacket), typeDiscriminator: "swipe")]
 [JsonDerivedType(typeof(SystemKeyPacket), typeDiscriminator: "sys")]
 [JsonDerivedType(typeof(TextInputPacket), typeDiscriminator: "text")]
+[JsonDerivedType(typeof(QualityChangePacket), typeDiscriminator: "quality")]
 [JsonDerivedType(typeof(HeartbeatPingPacket), typeDiscriminator: "ping")]
 [JsonDerivedType(typeof(HeartbeatPongPacket), typeDiscriminator: "pong")]
 public abstract record RemoteControlPacket
@@ -36,6 +37,9 @@ public abstract record RemoteControlPacket
 
     public static RemoteControlPacket TextInput(string text) =>
         new TextInputPacket(text);
+
+    public static RemoteControlPacket QualityChange(string preset) =>
+        new QualityChangePacket(preset);
 
     public static RemoteControlPacket Ping() =>
         new HeartbeatPingPacket(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -64,6 +68,10 @@ public sealed record SystemKeyPacket(
 
 public sealed record TextInputPacket(
     [property: JsonPropertyName("text")] string Text
+) : RemoteControlPacket;
+
+public sealed record QualityChangePacket(
+    [property: JsonPropertyName("preset")] string Preset
 ) : RemoteControlPacket;
 
 public sealed record HeartbeatPingPacket(

@@ -1,11 +1,12 @@
 using Microsoft.UI.Xaml;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MultideviceRemote;
 
 public partial class App : Application
 {
-    public static ILoggerFactory LoggerFactory { get; private set; } = null!;
+    public static ILoggerFactory LoggerFactory { get; private set; } = NullLoggerFactory.Instance;
     public static MainWindow? MainWindow { get; private set; }
 
     public App()

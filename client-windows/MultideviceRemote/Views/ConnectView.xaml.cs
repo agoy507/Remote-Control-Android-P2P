@@ -15,6 +15,8 @@ public sealed partial class ConnectView : UserControl
         LoadSettings();
     }
 
+    public void ReloadSettings() => LoadSettings();
+
     public void ShowError(string message)
     {
         StatusBar.IsOpen = false;
@@ -72,17 +74,18 @@ public sealed partial class ConnectView : UserControl
             return;
         }
 
-        // Simpan settings
-        var settings = new AppSettings
+        // Simpan settings (pertahankan konfigurasi Host)
+        var settings = SettingsManager.Load();
+        settings.MyDeviceId = myId;
+        settings.SignalingUrl = url;
+        settings.ServerApiToken = token;
+        settings.LastTargetDeviceId = targetId;
+        settings.LastTargetPassword = rememberPassword ? targetPassword : "";
+        settings.RememberTargetPassword = rememberPassword;
+        if (string.IsNullOrWhiteSpace(settings.MyAlias))
         {
-            MyDeviceId = myId,
-            SignalingUrl = url,
-            ServerApiToken = token,
-            LastTargetDeviceId = targetId,
-            LastTargetPassword = rememberPassword ? targetPassword : "",
-            RememberTargetPassword = rememberPassword,
-            MyAlias = Environment.MachineName
-        };
+            settings.MyAlias = Environment.MachineName;
+        }
         SettingsManager.Save(settings);
 
         // Bangun URL dengan token (sama seperti SignalingClient)

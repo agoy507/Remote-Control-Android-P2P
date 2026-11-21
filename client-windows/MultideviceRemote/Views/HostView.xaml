@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="MultideviceRemote.Views.HostView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    MinWidth="400">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="32,16,32,32" Spacing="16" MaxWidth="520"
+                    HorizontalAlignment="Center" VerticalAlignment="Top">
+
+            <!-- Header -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="🖥️ Mode Host (Target)"
+                           Style="{StaticResource TitleLargeTextBlockStyle}"/>
+                <TextBlock Text="Izinkan HP Android atau PC lain mengendalikan PC ini"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- Kartu Identitas PC -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="16">
+                <StackPanel Spacing="12">
+                    <!-- Device ID PC -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Device ID PC Ini"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="MyDeviceIdBox"
+                                     Grid.Column="0"
+                                     IsReadOnly="True"/>
+                            <Button x:Name="CopyIdButton"
+                                    Grid.Column="1"
+                                    Content="Salin ID"
+                                    Click="CopyIdButton_Click"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Kata Sandi Sesi Host -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Kata Sandi Sesi Host"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="HostPasswordBox"
+                                         Grid.Column="0"
+                                         PasswordRevealMode="Hidden"
+                                         PlaceholderText="Minimal 4 karakter"
+                                         PasswordChanged="HostPasswordBox_PasswordChanged"/>
+                            <Button x:Name="RandomPasswordButton"
+                                    Grid.Column="1"
+                                    Content="Acak"
+                                    Click="RandomPasswordButton_Click"/>
+                            <Button x:Name="CopyPasswordButton"
+                                    Grid.Column="2"
+                                    Content="Salin"
+                                    Click="CopyPasswordButton_Click"/>
+                        </Grid>
+                        <CheckBox x:Name="ShowPasswordCheckBox"
+                                  Content="Tampilkan kata sandi"
+                                  Checked="ShowPasswordCheckBox_Changed"
+                                  Unchecked="ShowPasswordCheckBox_Changed"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Pengaturan Host -->
+            <StackPanel Spacing="12">
+                <ToggleSwitch x:Name="RequireApprovalSwitch"
+                              Header="Minta konfirmasi untuk perangkat baru"
+                              OnContent="Aktif"
+                              OffContent="Otomatis terima"
+                              Toggled="HostOption_Changed"/>
+
+                <ToggleSwitch x:Name="AllowInputSwitch"
+                              Header="Izinkan kontrol mouse &amp; keyboard"
+                              OnContent="Aktif"
+                              OffContent="Hanya lihat layar"
+                              Toggled="HostOption_Changed"/>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Kualitas Stream"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <ComboBox x:Name="QualityComboBox"
+                              HorizontalAlignment="Stretch"
+                              SelectionChanged="QualityComboBox_SelectionChanged">
+                        <ComboBoxItem Content="Seimbang (720p • 24 FPS)" Tag="BALANCED"/>
+                        <ComboBoxItem Content="Latensi Ultra (720p • 30 FPS)" Tag="ULTRA_LOW_LATENCY"/>
+                        <ComboBoxItem Content="Hemat Data (540p • 15 FPS)" Tag="DATA_SAVER"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Pengaturan Server -->
+                <Expander Header="⚙️ Pengaturan Server" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="12" Padding="0,8,0,0">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="URL Signaling Server"
+                                       Style="{StaticResource CaptionTextBlockStyle}"/>
+                            <TextBox x:Name="SignalingUrlBox"
+                                     Text="wss://remote.agoy507.my.id/ws"/>
+                        </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Token Otorisasi (SERVER_API_TOKEN)"
+                                       Style="{StaticResource CaptionTextBlockStyle}"/>
+                            <PasswordBox x:Name="ApiTokenBox"
+                                         PlaceholderText="Isi token dari server (jika diaktifkan)"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+
+            <!-- Status Host & Error -->
+            <InfoBar x:Name="ErrorBar"
+                     IsOpen="False"
+                     Severity="Error"
+                     IsClosable="True"/>
+
+            <InfoBar x:Name="HostStatusBar"
+                     IsOpen="True"
+                     Severity="Informational"
+                     Title="Status Mode Host"
+                     Message="Mode Host nonaktif."
+                     IsClosable="False"/>
+
+            <!-- Tombol Kontrol Host -->
+            <StackPanel Spacing="8">
+                <Button x:Name="ToggleHostButton"
+                        Content="Aktifkan Mode Host"
+                        Style="{StaticResource AccentButtonStyle}"
+                        HorizontalAlignment="Stretch"
+                        Height="44"
+                        Click="ToggleHostButton_Click"/>
+
+                <Button x:Name="DisconnectPeerButton"
+                        Content="Putuskan Pengendali"
+                        HorizontalAlignment="Stretch"
+                        Visibility="Collapsed"
+                        Click="DisconnectPeerButton_Click"/>
+            </StackPanel>
+
+            <!-- Daftar Perangkat Terpercaya -->
+            <StackPanel Spacing="8">
+                <TextBlock Text="Perangkat Terpercaya"
+                           Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                <TextBlock x:Name="NoTrustedText"
+                           Text="Belum ada perangkat pengendali terpercaya."
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <StackPanel x:Name="TrustedDevicesPanel" Spacing="6"/>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

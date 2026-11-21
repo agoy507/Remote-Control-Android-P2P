@@ -7,10 +7,39 @@
     Title="Multidevice Remote">
 
     <Grid>
-        <!-- Connect View (default) -->
-        <views:ConnectView x:Name="ConnectView"
-                           Visibility="Visible"
-                           OnConnectRequested="ConnectView_OnConnectRequested"/>
+        <!-- Lobby (Kendalikan & Mode Host) -->
+        <Grid x:Name="MainTabsGrid">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Navigation Bar (beri ruang atas untuk custom titlebar & caption buttons) -->
+            <StackPanel Grid.Row="0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="8"
+                        Padding="16,36,16,8">
+                <Button x:Name="ControllerTabButton"
+                        Content="🎮 Kendalikan"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Click="ControllerTabButton_Click"/>
+                <Button x:Name="HostTabButton"
+                        Content="🖥️ Mode Host"
+                        Click="HostTabButton_Click"/>
+            </StackPanel>
+
+            <!-- Connect View (default) -->
+            <views:ConnectView x:Name="ConnectView"
+                               Grid.Row="1"
+                               Visibility="Visible"
+                               OnConnectRequested="ConnectView_OnConnectRequested"/>
+
+            <!-- Host View -->
+            <views:HostView x:Name="HostView"
+                            Grid.Row="1"
+                            Visibility="Collapsed"/>
+        </Grid>
 
         <!-- Remote View (saat sesi aktif) -->
         <views:RemoteView x:Name="RemoteView"

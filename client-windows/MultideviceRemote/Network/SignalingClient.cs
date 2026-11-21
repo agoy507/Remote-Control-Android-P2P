@@ -25,18 +25,23 @@ public sealed class SignalingClient : IAsyncDisposable
     private readonly ILogger<SignalingClient> _logger;
     private readonly string _signalingUrl;
     private readonly string _apiToken;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _ws;
     private CancellationTokenSource? _cts;
     private Task? _pingTask;
 
     // ── Events ────────────────────────────────────────────────────────────────
     public event Action<EphemeralIceConfig>? OnRegistered;
+    public event Action<E2eeHelloPayload>? OnE2eeHello;
     public event Action<E2eeAckPayload>? OnE2eeAck;
     public event Action<string>? OnE2eeReject;         // reason string
     public event Action<string, string>? OnOffer;        // (fromId, sdpEncryptedB64)
+    public event Action<WebRtcOfferPayload>? OnWebRtcOffer;
     public event Action<string, string>? OnAnswer;       // (fromId, sdpEncryptedB64)
     public event Action<string, string>? OnIceCandidate; // (fromId, candidateEncryptedB64)
+    public event Action<WebRtcIcePayload>? OnWebRtcIce;
     public event Action<string>? OnSessionEnded;         // reason
+    public event Action<string, string>? OnSessionEndedWithId; // (sessionId, reason)
     public event Action<string>? OnError;
     public event Action? OnDisconnected;
 
@@ -86,9 +91,21 @@ public sealed class SignalingClient : IAsyncDisposable
     public async Task SendE2eeHelloAsync(string targetId, string sessionId, string pubKeyB64, string nonceB64, string alias) =>
         await SendRawAsync(new { type = "e2ee_hello", targetId, sessionId, pubKey = pubKeyB64, nonce = nonceB64, alias });
 
+    /// <summary>Kirim e2ee_ack — balasan handshake dari host ke controller.</summary>
+    public async Task SendE2eeAckAsync(string targetId, string sessionId, string pubKeyB64, string nonceB64, string hostProofB64, string alias) =>
+        await SendRawAsync(new { type = "e2ee_ack", targetId, sessionId, pubKey = pubKeyB64, nonce = nonceB64, hostProof = hostProofB64, alias });
+
+    /// <summary>Kirim e2ee_reject — tolak koneksi masuk.</summary>
+    public async Task SendE2eeRejectAsync(string targetId, string sessionId, string reason, string message) =>
+        await SendRawAsync(new { type = "e2ee_reject", targetId, sessionId, reason, message });
+
     /// <summary>Kirim WebRTC offer terenkripsi (type: webrtc_offer, payload: encryptedSdp).</summary>
     public async Task SendEncryptedOfferAsync(string targetId, string sessionId, string sdpEncryptedB64, string clientProofB64) =>
         await SendRawAsync(new { type = "webrtc_offer", targetId, payload = sdpEncryptedB64, sessionId, clientProof = clientProofB64 });
+
+    /// <summary>Kirim WebRTC answer terenkripsi (type: webrtc_answer, payload: encryptedSdp).</summary>
+    public async Task SendEncryptedAnswerAsync(string targetId, string sessionId, string sdpEncryptedB64) =>
+        await SendRawAsync(new { type = "webrtc_answer", targetId, sessionId, payload = sdpEncryptedB64 });
 
     /// <summary>Kirim WebRTC ICE candidate terenkripsi (type: webrtc_ice, payload: encryptedCandidate).</summary>
     public async Task SendEncryptedIceCandidateAsync(string targetId, string candidateEncryptedB64, string sessionId) =>
@@ -184,6 +201,17 @@ public sealed class SignalingClient : IAsyncDisposable
                     break;
 
                 // ── E2EE Handshake ────────────────────────────────────────────
+                case "e2ee_hello":
+                    var helloPayload = new E2eeHelloPayload(
+                        SessionId: node!["sessionId"]?.GetValue<string>() ?? "",
+                        FromId: node["fromId"]?.GetValue<string>() ?? "",
+                        ControllerPubKeyB64: node["pubKey"]?.GetValue<string>() ?? "",
+                        ControllerNonceB64: node["nonce"]?.GetValue<string>() ?? "",
+                        ControllerAlias: node["alias"]?.GetValue<string>() ?? "Pengendali"
+                    );
+                    OnE2eeHello?.Invoke(helloPayload);
+                    break;
+
                 case "e2ee_ack":
                     var ackPayload = new E2eeAckPayload(
                         SessionId: node!["sessionId"]?.GetValue<string>() ?? "",
@@ -204,10 +232,12 @@ public sealed class SignalingClient : IAsyncDisposable
 
                 // ── WebRTC SDP & ICE ───────────────────────────────────────────
                 case "webrtc_offer":
-                    OnOffer?.Invoke(
-                        node!["fromId"]?.GetValue<string>() ?? "",
-                        node["payload"]?.GetValue<string>() ?? ""
-                    );
+                    var offerSessionId = node!["sessionId"]?.GetValue<string>() ?? "";
+                    var offerFromId = node["fromId"]?.GetValue<string>() ?? "";
+                    var offerSdpPayload = node["payload"]?.GetValue<string>() ?? "";
+                    var clientProof = node["clientProof"]?.GetValue<string>() ?? "";
+                    OnOffer?.Invoke(offerFromId, offerSdpPayload);
+                    OnWebRtcOffer?.Invoke(new WebRtcOfferPayload(offerSessionId, offerFromId, offerSdpPayload, clientProof));
                     break;
 
                 case "webrtc_answer":
@@ -218,16 +248,19 @@ public sealed class SignalingClient : IAsyncDisposable
                     break;
 
                 case "webrtc_ice":
-                    OnIceCandidate?.Invoke(
-                        node!["fromId"]?.GetValue<string>() ?? "",
-                        node["payload"]?.GetValue<string>() ?? ""
-                    );
+                    var iceSessionId = node!["sessionId"]?.GetValue<string>() ?? "";
+                    var iceFromId = node["fromId"]?.GetValue<string>() ?? "";
+                    var iceCandidatePayload = node["payload"]?.GetValue<string>() ?? "";
+                    OnIceCandidate?.Invoke(iceFromId, iceCandidatePayload);
+                    OnWebRtcIce?.Invoke(new WebRtcIcePayload(iceSessionId, iceFromId, iceCandidatePayload));
                     break;
 
                 // ── Session lifecycle ──────────────────────────────────────────
                 case "session_end":
+                    var endSessionId = node?["sessionId"]?.GetValue<string>() ?? "";
                     var endReason = node?["reason"]?.GetValue<string>() ?? "Sesi berakhir";
                     OnSessionEnded?.Invoke(endReason);
+                    OnSessionEndedWithId?.Invoke(endSessionId, endReason);
                     break;
 
                 case "peer_offline":
@@ -307,7 +340,23 @@ public sealed class SignalingClient : IAsyncDisposable
         var json = JsonSerializer.Serialize(message);
         _logger.LogDebug("→ {Json}", json);
         var bytes = Encoding.UTF8.GetBytes(json);
-        await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, _cts?.Token ?? CancellationToken.None);
+
+        var token = _cts?.Token ?? CancellationToken.None;
+        try
+        {
+            await _sendLock.WaitAsync(token);
+            try
+            {
+                if (_ws?.State != WebSocketState.Open || token.IsCancellationRequested) return;
+                await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, token);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
+        }
+        catch (OperationCanceledException) { /* shutdown in progress */ }
+        catch (ObjectDisposedException) { /* disposed during send */ }
     }
 
     public async ValueTask DisposeAsync()
@@ -315,8 +364,33 @@ public sealed class SignalingClient : IAsyncDisposable
         await DisconnectAsync();
         _ws?.Dispose();
         _cts?.Dispose();
+        _sendLock.Dispose();
     }
 }
+
+/// <summary>Payload dari e2ee_hello (permintaan masuk controller ke host).</summary>
+public sealed record E2eeHelloPayload(
+    string SessionId,
+    string FromId,
+    string ControllerPubKeyB64,
+    string ControllerNonceB64,
+    string ControllerAlias
+);
+
+/// <summary>Payload dari webrtc_offer terenkripsi.</summary>
+public sealed record WebRtcOfferPayload(
+    string SessionId,
+    string FromId,
+    string EncryptedSdpB64,
+    string ClientProofB64
+);
+
+/// <summary>Payload dari webrtc_ice terenkripsi.</summary>
+public sealed record WebRtcIcePayload(
+    string SessionId,
+    string FromId,
+    string EncryptedCandidateB64
+);
 
 /// <summary>Payload dari e2ee_ack (host response ke controller hello).</summary>
 public sealed record E2eeAckPayload(

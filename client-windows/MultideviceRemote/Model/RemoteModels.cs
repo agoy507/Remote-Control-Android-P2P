@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 
 namespace MultideviceRemote.Model;
@@ -46,9 +47,45 @@ public sealed record DeviceInfo(
     bool IsOnline
 );
 
+/// <summary>Pengendali terpercaya yang pernah diizinkan.</summary>
+public sealed record TrustedControllerEntry(
+    string DeviceId,
+    string Alias,
+    long LastConnectedEpochMs,
+    string LastFingerprint = ""
+);
+
+/// <summary>Permintaan koneksi masuk ke Mode Host.</summary>
+public sealed record IncomingHostRequest(
+    string SessionId,
+    string FromDeviceId,
+    string FromAlias,
+    string SafetyFingerprint
+);
+
+public static class DeviceIdUtil
+{
+    public static string Normalize(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return string.Empty;
+        Span<char> buf = stackalloc char[raw.Length];
+        int n = 0;
+        foreach (char c in raw)
+        {
+            if (char.IsAsciiLetterOrDigit(c))
+            {
+                buf[n++] = char.ToUpperInvariant(c);
+            }
+        }
+        return new string(buf[..n]);
+    }
+}
+
 /// <summary>App settings yang disimpan ke file.</summary>
 public sealed class AppSettings
 {
+    private const string PasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
     public string SignalingUrl { get; set; } = "wss://remote.agoy507.my.id/ws";
     public string MyDeviceId { get; set; } = GenerateDeviceId();
     public string MyAlias { get; set; } = Environment.MachineName;
@@ -56,6 +93,17 @@ public sealed class AppSettings
     public string LastTargetDeviceId { get; set; } = "";
     public string LastTargetPassword { get; set; } = "";
     public bool RememberTargetPassword { get; set; } = true;
+
+    public string HostSessionPassword { get; set; } = GenerateHostPassword();
+    public bool RequireVisualApproval { get; set; } = true;
+    public bool AllowInputControl { get; set; } = true;
+    public string HostQualityPreset { get; set; } = "BALANCED";
+    public List<TrustedControllerEntry> TrustedControllers { get; set; } = new();
+
+    public static string GenerateHostPassword()
+    {
+        return RandomNumberGenerator.GetString(PasswordAlphabet, 8);
+    }
 
     private static string GenerateDeviceId()
     {

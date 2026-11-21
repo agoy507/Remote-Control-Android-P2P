@@ -7,6 +7,7 @@ using MultideviceRemote.Model;
 using MultideviceRemote.Network;
 using MultideviceRemote.Rendering;
 using SIPSorcery.Net;
+using SIPSorceryMedia.Encoders;
 using SIPSorceryMedia.Windows;
 
 namespace MultideviceRemote.WebRtc;
@@ -348,9 +349,9 @@ public sealed class SessionCoordinator : IAsyncDisposable
             }
         };
 
-        // 2. Video Track & Endpoint (RecvOnly)
+        // 2. Video Track & Endpoint (RecvOnly dengan VP8 decoder)
         _renderer = new VideoFrameRenderer(_swapChainPanel);
-        _videoEndPoint = new WindowsVideoEndPoint(null);
+        _videoEndPoint = new WindowsVideoEndPoint(new VpxVideoEncoder());
 
         var videoTrack = new MediaStreamTrack(
             _videoEndPoint.GetVideoSinkFormats(),
