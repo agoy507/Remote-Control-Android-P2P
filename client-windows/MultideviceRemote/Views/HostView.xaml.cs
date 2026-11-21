@@ -11,10 +11,13 @@ public sealed partial class HostView : UserControl
     private readonly HostSessionCoordinator _coordinator = new();
     private bool _isLoadingUi;
     private bool _dialogOpen;
+    private bool _isBusyToggling;
 
     public bool IsHostRunning => _coordinator.IsHostRunning;
+    public string CurrentDeviceIdFormatted => MyDeviceIdBox.Text;
 
     public event Action<bool>? HostRunningStateChanged;
+    public event Action? IncomingApprovalRequested;
 
     public HostView()
     {
@@ -111,6 +114,9 @@ public sealed partial class HostView : UserControl
         _dialogOpen = true;
         try
         {
+            IncomingApprovalRequested?.Invoke();
+            await Task.Delay(120);
+
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
@@ -151,6 +157,8 @@ public sealed partial class HostView : UserControl
             HostPasswordBox.Password = settings.HostSessionPassword ?? "";
             RequireApprovalSwitch.IsOn = settings.RequireVisualApproval;
             AllowInputSwitch.IsOn = settings.AllowInputControl;
+            AutoStartHostSwitch.IsOn = settings.AutoStartHostOnLaunch;
+            AutoMinimizeHostSwitch.IsOn = settings.AutoMinimizeOnHostStart;
             SignalingUrlBox.Text = settings.SignalingUrl ?? "wss://remote.agoy507.my.id/ws";
             ApiTokenBox.Password = settings.ServerApiToken ?? "";
 
@@ -180,6 +188,8 @@ public sealed partial class HostView : UserControl
         settings.HostSessionPassword = HostPasswordBox.Password.Trim();
         settings.RequireVisualApproval = RequireApprovalSwitch.IsOn;
         settings.AllowInputControl = AllowInputSwitch.IsOn;
+        settings.AutoStartHostOnLaunch = AutoStartHostSwitch.IsOn;
+        settings.AutoMinimizeOnHostStart = AutoMinimizeHostSwitch.IsOn;
         settings.HostQualityPreset = (QualityComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "BALANCED";
 
         var url = SignalingUrlBox.Text.Trim();
@@ -282,39 +292,49 @@ public sealed partial class HostView : UserControl
         ApiTokenBox.IsEnabled = !isRunning;
     }
 
-    // ── Event Handlers ────────────────────────────────────────────────────────
-
-    private async void ToggleHostButton_Click(object sender, RoutedEventArgs e)
+    public async Task<bool> StartHostIfNotRunningAsync(bool isAutoStart = false)
     {
+        if (_coordinator.IsHostRunning) return true;
+        if (_isBusyToggling) return false;
+
+        _isBusyToggling = true;
         ErrorBar.IsOpen = false;
         ToggleHostButton.IsEnabled = false;
 
         try
         {
-            if (_coordinator.IsHostRunning)
-            {
-                await _coordinator.StopHostAsync();
-                UpdateHostButtonUi(isRunning: false, hasPeer: false);
-                HostStatusBar.Severity = InfoBarSeverity.Informational;
-                HostStatusBar.Message = "Mode Host nonaktif.";
-                HostRunningStateChanged?.Invoke(false);
-                return;
-            }
-
             var password = HostPasswordBox.Password.Trim();
             if (password.Length < 4)
             {
-                ErrorBar.Message = "Kata sandi sesi Host minimal 4 karakter.";
-                ErrorBar.IsOpen = true;
-                return;
+                if (isAutoStart)
+                {
+                    password = AppSettings.GenerateHostPassword();
+                    _isLoadingUi = true;
+                    HostPasswordBox.Password = password;
+                    _isLoadingUi = false;
+                }
+                else
+                {
+                    ErrorBar.Message = "Kata sandi sesi Host minimal 4 karakter.";
+                    ErrorBar.IsOpen = true;
+                    return false;
+                }
             }
 
             var url = SignalingUrlBox.Text.Trim();
             if (string.IsNullOrEmpty(url))
             {
-                ErrorBar.Message = "URL signaling tidak boleh kosong.";
-                ErrorBar.IsOpen = true;
-                return;
+                if (isAutoStart)
+                {
+                    url = "wss://remote.agoy507.my.id/ws";
+                    SignalingUrlBox.Text = url;
+                }
+                else
+                {
+                    ErrorBar.Message = "URL signaling tidak boleh kosong.";
+                    ErrorBar.IsOpen = true;
+                    return false;
+                }
             }
 
             var settings = SaveCurrentHostSettings();
@@ -344,17 +364,55 @@ public sealed partial class HostView : UserControl
 
             UpdateHostButtonUi(isRunning: true, hasPeer: _coordinator.HasActivePeer);
             HostRunningStateChanged?.Invoke(true);
+            return true;
         }
         catch (Exception ex)
         {
             ErrorBar.Message = $"Gagal mengaktifkan Mode Host: {ex.Message}";
             ErrorBar.IsOpen = true;
             UpdateHostButtonUi(isRunning: false, hasPeer: false);
+            return false;
         }
         finally
         {
             ToggleHostButton.IsEnabled = true;
+            _isBusyToggling = false;
         }
+    }
+
+    // ── Event Handlers ────────────────────────────────────────────────────────
+
+    private async void ToggleHostButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isBusyToggling) return;
+
+        if (_coordinator.IsHostRunning)
+        {
+            _isBusyToggling = true;
+            ErrorBar.IsOpen = false;
+            ToggleHostButton.IsEnabled = false;
+            try
+            {
+                await _coordinator.StopHostAsync();
+                UpdateHostButtonUi(isRunning: false, hasPeer: false);
+                HostStatusBar.Severity = InfoBarSeverity.Informational;
+                HostStatusBar.Message = "Mode Host nonaktif.";
+                HostRunningStateChanged?.Invoke(false);
+            }
+            catch (Exception ex)
+            {
+                ErrorBar.Message = $"Gagal menghentikan Mode Host: {ex.Message}";
+                ErrorBar.IsOpen = true;
+            }
+            finally
+            {
+                ToggleHostButton.IsEnabled = true;
+                _isBusyToggling = false;
+            }
+            return;
+        }
+
+        await StartHostIfNotRunningAsync(isAutoStart: false);
     }
 
     private async void DisconnectPeerButton_Click(object sender, RoutedEventArgs e)

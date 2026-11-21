@@ -8,7 +8,7 @@
 
     <Grid>
         <!-- Lobby (Kendalikan & Mode Host) -->
-        <Grid x:Name="MainTabsGrid">
+        <Grid x:Name="MainTabsGrid" Loaded="MainTabsGrid_Loaded">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -22,23 +22,23 @@
                         Padding="16,36,16,8">
                 <Button x:Name="ControllerTabButton"
                         Content="🎮 Kendalikan"
-                        Style="{StaticResource AccentButtonStyle}"
                         Click="ControllerTabButton_Click"/>
                 <Button x:Name="HostTabButton"
                         Content="🖥️ Mode Host"
+                        Style="{StaticResource AccentButtonStyle}"
                         Click="HostTabButton_Click"/>
             </StackPanel>
 
-            <!-- Connect View (default) -->
+            <!-- Connect View -->
             <views:ConnectView x:Name="ConnectView"
                                Grid.Row="1"
-                               Visibility="Visible"
+                               Visibility="Collapsed"
                                OnConnectRequested="ConnectView_OnConnectRequested"/>
 
-            <!-- Host View -->
+            <!-- Host View (default saat dibuka) -->
             <views:HostView x:Name="HostView"
                             Grid.Row="1"
-                            Visibility="Collapsed"/>
+                            Visibility="Visible"/>
         </Grid>
 
         <!-- Remote View (saat sesi aktif) -->

@@ -1,3 +1,4 @@
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MultideviceRemote.Model;
@@ -8,6 +9,8 @@ namespace MultideviceRemote;
 public sealed partial class MainWindow : Window
 {
     private SessionCoordinator? _session;
+    private bool _startupHandled;
+    private bool _userSwitchedToController;
 
     public MainWindow()
     {
@@ -24,10 +27,49 @@ public sealed partial class MainWindow : Window
         HostView.HostRunningStateChanged += running => DispatcherQueue.TryEnqueue(() =>
         {
             HostTabButton.Content = running ? "🖥️ Mode Host • Aktif" : "🖥️ Mode Host";
+            Title = running && !string.IsNullOrWhiteSpace(HostView.CurrentDeviceIdFormatted)
+                ? $"Multidevice Remote — Host Aktif ({HostView.CurrentDeviceIdFormatted})"
+                : "Multidevice Remote";
+        });
+
+        HostView.IncomingApprovalRequested += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (AppWindow.Presenter is OverlappedPresenter presenter &&
+                presenter.State == OverlappedPresenterState.Minimized)
+            {
+                presenter.Restore();
+            }
+            Activate();
         });
     }
 
-    private void ControllerTabButton_Click(object sender, RoutedEventArgs e) => SwitchLobbyTab(isHostTab: false);
+    private async void MainTabsGrid_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_startupHandled) return;
+        _startupHandled = true;
+
+        var settings = SettingsManager.Load();
+        if (!settings.AutoStartHostOnLaunch)
+        {
+            return;
+        }
+
+        SwitchLobbyTab(isHostTab: true);
+        var started = await HostView.StartHostIfNotRunningAsync(isAutoStart: true);
+        if (started && settings.AutoMinimizeOnHostStart && !_userSwitchedToController)
+        {
+            if (AppWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.Minimize();
+            }
+        }
+    }
+
+    private void ControllerTabButton_Click(object sender, RoutedEventArgs e)
+    {
+        _userSwitchedToController = true;
+        SwitchLobbyTab(isHostTab: false);
+    }
 
     private void HostTabButton_Click(object sender, RoutedEventArgs e) => SwitchLobbyTab(isHostTab: true);
 

@@ -24,9 +24,24 @@ public static class SettingsManager
             {
                 var json = File.ReadAllText(SettingsFile);
                 var settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                var dirty = false;
                 if (string.IsNullOrWhiteSpace(settings.MyDeviceId) || DeviceIdUtil.IsLegacyPcHexId(settings.MyDeviceId))
                 {
                     settings.MyDeviceId = AppSettings.GenerateDeviceId();
+                    dirty = true;
+                }
+                if (string.IsNullOrWhiteSpace(settings.HostSessionPassword) || settings.HostSessionPassword.Trim().Length < 4)
+                {
+                    settings.HostSessionPassword = AppSettings.GenerateHostPassword();
+                    dirty = true;
+                }
+                if (string.IsNullOrWhiteSpace(settings.SignalingUrl))
+                {
+                    settings.SignalingUrl = "wss://remote.agoy507.my.id/ws";
+                    dirty = true;
+                }
+                if (dirty)
+                {
                     Save(settings);
                 }
                 return settings;

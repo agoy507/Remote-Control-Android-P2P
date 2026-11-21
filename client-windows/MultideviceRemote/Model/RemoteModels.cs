@@ -118,6 +118,8 @@ public sealed class AppSettings
     public string HostSessionPassword { get; set; } = GenerateHostPassword();
     public bool RequireVisualApproval { get; set; } = true;
     public bool AllowInputControl { get; set; } = true;
+    public bool AutoStartHostOnLaunch { get; set; } = true;
+    public bool AutoMinimizeOnHostStart { get; set; } = false;
     public string HostQualityPreset { get; set; } = "SHARP_HD";
     public List<TrustedControllerEntry> TrustedControllers { get; set; } = new();
 

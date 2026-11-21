@@ -93,6 +93,18 @@
                               OffContent="Hanya lihat layar"
                               Toggled="HostOption_Changed"/>
 
+                <ToggleSwitch x:Name="AutoStartHostSwitch"
+                              Header="Aktifkan Mode Host otomatis saat aplikasi dibuka"
+                              OnContent="Aktif"
+                              OffContent="Manual"
+                              Toggled="HostOption_Changed"/>
+
+                <ToggleSwitch x:Name="AutoMinimizeHostSwitch"
+                              Header="Minimize otomatis ke taskbar saat dibuka"
+                              OnContent="Aktif"
+                              OffContent="Tetap tampil"
+                              Toggled="HostOption_Changed"/>
+
                 <StackPanel Spacing="4">
                     <TextBlock Text="Kualitas Stream"
                                Style="{StaticResource CaptionTextBlockStyle}"
