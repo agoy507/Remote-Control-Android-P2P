@@ -158,6 +158,7 @@ public sealed partial class HostView : UserControl
             RequireApprovalSwitch.IsOn = settings.RequireVisualApproval;
             AllowInputSwitch.IsOn = settings.AllowInputControl;
             AutoStartHostSwitch.IsOn = settings.AutoStartHostOnLaunch;
+            MinimizeToTraySwitch.IsOn = settings.MinimizeToTray;
             AutoMinimizeHostSwitch.IsOn = settings.AutoMinimizeOnHostStart;
             SignalingUrlBox.Text = settings.SignalingUrl ?? "wss://remote.agoy507.my.id/ws";
             ApiTokenBox.Password = settings.ServerApiToken ?? "";
@@ -189,8 +190,9 @@ public sealed partial class HostView : UserControl
         settings.RequireVisualApproval = RequireApprovalSwitch.IsOn;
         settings.AllowInputControl = AllowInputSwitch.IsOn;
         settings.AutoStartHostOnLaunch = AutoStartHostSwitch.IsOn;
+        settings.MinimizeToTray = MinimizeToTraySwitch.IsOn;
         settings.AutoMinimizeOnHostStart = AutoMinimizeHostSwitch.IsOn;
-        settings.HostQualityPreset = (QualityComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "BALANCED";
+        settings.HostQualityPreset = (QualityComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "SHARP_HD";
 
         var url = SignalingUrlBox.Text.Trim();
         if (!string.IsNullOrEmpty(url))
@@ -380,9 +382,7 @@ public sealed partial class HostView : UserControl
         }
     }
 
-    // ── Event Handlers ────────────────────────────────────────────────────────
-
-    private async void ToggleHostButton_Click(object sender, RoutedEventArgs e)
+    public async Task ToggleHostFromTrayAsync()
     {
         if (_isBusyToggling) return;
 
@@ -415,6 +415,19 @@ public sealed partial class HostView : UserControl
         await StartHostIfNotRunningAsync(isAutoStart: false);
     }
 
+    public void CopyDeviceIdToClipboard()
+    {
+        CopyToClipboard(MyDeviceIdBox.Text);
+        HostStatusBar.Message = "Device ID PC disalin ke clipboard.";
+    }
+
+    // ── Event Handlers ────────────────────────────────────────────────────────
+
+    private async void ToggleHostButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ToggleHostFromTrayAsync();
+    }
+
     private async void DisconnectPeerButton_Click(object sender, RoutedEventArgs e)
     {
         await _coordinator.DisconnectActivePeerAsync();
@@ -423,8 +436,7 @@ public sealed partial class HostView : UserControl
 
     private void CopyIdButton_Click(object sender, RoutedEventArgs e)
     {
-        CopyToClipboard(MyDeviceIdBox.Text);
-        HostStatusBar.Message = "Device ID PC disalin ke clipboard.";
+        CopyDeviceIdToClipboard();
     }
 
     private void CopyPasswordButton_Click(object sender, RoutedEventArgs e)

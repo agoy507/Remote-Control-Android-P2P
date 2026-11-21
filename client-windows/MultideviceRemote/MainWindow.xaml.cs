@@ -1,16 +1,22 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MultideviceRemote.Model;
 using MultideviceRemote.WebRtc;
+using WinRT.Interop;
 
 namespace MultideviceRemote;
 
 public sealed partial class MainWindow : Window
 {
     private SessionCoordinator? _session;
+    private SystemTrayManager? _tray;
     private bool _startupHandled;
     private bool _userSwitchedToController;
+    private bool _isExplicitExit;
+    private bool _isRestoringFromTray;
+    private bool _trayHintShown;
 
     public MainWindow()
     {
@@ -23,24 +29,117 @@ public sealed partial class MainWindow : Window
             AppWindow.SetIcon(iconPath);
         }
 
+        InitializeSystemTray(iconPath);
+
+        AppWindow.Changed += AppWindow_Changed;
+        AppWindow.Closing += AppWindow_Closing;
         Closed += MainWindow_Closed;
+
         HostView.HostRunningStateChanged += running => DispatcherQueue.TryEnqueue(() =>
         {
             HostTabButton.Content = running ? "🖥️ Mode Host • Aktif" : "🖥️ Mode Host";
-            Title = running && !string.IsNullOrWhiteSpace(HostView.CurrentDeviceIdFormatted)
-                ? $"Multidevice Remote — Host Aktif ({HostView.CurrentDeviceIdFormatted})"
-                : "Multidevice Remote";
+            UpdateTitleAndTrayState(running);
         });
 
-        HostView.IncomingApprovalRequested += () => DispatcherQueue.TryEnqueue(() =>
+        HostView.IncomingApprovalRequested += () => DispatcherQueue.TryEnqueue(RestoreFromTray);
+    }
+
+    private void InitializeSystemTray(string iconPath)
+    {
+        _tray = new SystemTrayManager(iconPath);
+        _tray.UpdateState("Multidevice Remote", HostView.IsHostRunning, HostView.CurrentDeviceIdFormatted);
+
+        _tray.OpenRequested += () => DispatcherQueue.TryEnqueue(RestoreFromTray);
+        _tray.ToggleHostRequested += () => DispatcherQueue.TryEnqueue(async () =>
         {
+            await HostView.ToggleHostFromTrayAsync();
+        });
+        _tray.CopyDeviceIdRequested += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            HostView.CopyDeviceIdToClipboard();
+            var id = HostView.CurrentDeviceIdFormatted;
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                _tray?.ShowBalloon("Device ID Disalin", $"Device ID PC ({id}) sudah disalin ke clipboard.");
+            }
+        });
+        _tray.ExitRequested += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            _isExplicitExit = true;
+            Close();
+        });
+    }
+
+    private void UpdateTitleAndTrayState(bool hostRunning)
+    {
+        var idFormatted = HostView.CurrentDeviceIdFormatted;
+        var title = hostRunning && !string.IsNullOrWhiteSpace(idFormatted)
+            ? $"Multidevice Remote — Host Aktif ({idFormatted})"
+            : "Multidevice Remote";
+        Title = title;
+        _tray?.UpdateState(title, hostRunning, idFormatted);
+    }
+
+    private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (!args.DidPresenterChange || _isExplicitExit || _isRestoringFromTray || !sender.IsVisible)
+            return;
+
+        if (sender.Presenter is OverlappedPresenter presenter &&
+            presenter.State == OverlappedPresenterState.Minimized &&
+            SettingsManager.Load().MinimizeToTray)
+        {
+            HideToTray(showBalloonOnce: true);
+        }
+    }
+
+    private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_isExplicitExit) return;
+
+        if (SettingsManager.Load().MinimizeToTray)
+        {
+            args.Cancel = true;
+            HideToTray(showBalloonOnce: true);
+        }
+    }
+
+    private void HideToTray(bool showBalloonOnce)
+    {
+        AppWindow.Hide();
+        if (showBalloonOnce && !_trayHintShown)
+        {
+            _trayHintShown = true;
+            var status = HostView.IsHostRunning
+                ? "Mode Host tetap aktif di latar belakang. Klik ikon tray untuk membuka kembali."
+                : "Aplikasi diminimize ke System Tray. Klik ikon tray untuk membuka kembali.";
+            _tray?.ShowBalloon("Multidevice Remote di System Tray", status);
+        }
+    }
+
+    private void RestoreFromTray()
+    {
+        _isRestoringFromTray = true;
+        try
+        {
+            AppWindow.Show();
             if (AppWindow.Presenter is OverlappedPresenter presenter &&
                 presenter.State == OverlappedPresenterState.Minimized)
             {
                 presenter.Restore();
             }
+            var hwnd = WindowNative.GetWindowHandle(this);
+            if (hwnd != IntPtr.Zero)
+            {
+                ShowWindow(hwnd, SW_RESTORE);
+                SetForegroundWindow(hwnd);
+            }
             Activate();
-        });
+        }
+        finally
+        {
+            _isRestoringFromTray = false;
+        }
     }
 
     private async void MainTabsGrid_Loaded(object sender, RoutedEventArgs e)
@@ -49,6 +148,7 @@ public sealed partial class MainWindow : Window
         _startupHandled = true;
 
         var settings = SettingsManager.Load();
+        UpdateTitleAndTrayState(HostView.IsHostRunning);
         if (!settings.AutoStartHostOnLaunch)
         {
             return;
@@ -58,7 +158,11 @@ public sealed partial class MainWindow : Window
         var started = await HostView.StartHostIfNotRunningAsync(isAutoStart: true);
         if (started && settings.AutoMinimizeOnHostStart && !_userSwitchedToController)
         {
-            if (AppWindow.Presenter is OverlappedPresenter presenter)
+            if (settings.MinimizeToTray)
+            {
+                HideToTray(showBalloonOnce: true);
+            }
+            else if (AppWindow.Presenter is OverlappedPresenter presenter)
             {
                 presenter.Minimize();
             }
@@ -186,6 +290,12 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
+        AppWindow.Changed -= AppWindow_Changed;
+        AppWindow.Closing -= AppWindow_Closing;
+
+        _tray?.Dispose();
+        _tray = null;
+
         RemoteView.StopInputCapture();
         HostView.StopForWindowClose();
 
@@ -196,6 +306,16 @@ public sealed partial class MainWindow : Window
             _ = Task.Run(async () => await session.DisposeAsync());
         }
     }
+
+    private const int SW_RESTORE = 9;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 }
 
 /// <summary>Event args dari ConnectView saat user tap Connect.</summary>

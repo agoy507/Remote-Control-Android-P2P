@@ -99,8 +99,14 @@
                               OffContent="Manual"
                               Toggled="HostOption_Changed"/>
 
+                <ToggleSwitch x:Name="MinimizeToTraySwitch"
+                              Header="Minimize &amp; tutup ke System Tray"
+                              OnContent="Aktif (jalan di latar belakang)"
+                              OffContent="Nonaktif"
+                              Toggled="HostOption_Changed"/>
+
                 <ToggleSwitch x:Name="AutoMinimizeHostSwitch"
-                              Header="Minimize otomatis ke taskbar saat dibuka"
+                              Header="Sembunyikan ke tray otomatis saat aplikasi dibuka"
                               OnContent="Aktif"
                               OffContent="Tetap tampil"
                               Toggled="HostOption_Changed"/>
@@ -112,9 +118,9 @@
                     <ComboBox x:Name="QualityComboBox"
                               HorizontalAlignment="Stretch"
                               SelectionChanged="QualityComboBox_SelectionChanged">
-                        <ComboBoxItem Content="Tajam Full HD (1080p • 20 FPS • 5.5 Mbps)" Tag="SHARP_HD"/>
-                        <ComboBoxItem Content="Seimbang Full HD (1080p • 20 FPS)" Tag="BALANCED"/>
-                        <ComboBoxItem Content="Latensi Ultra (1440px • 30 FPS)" Tag="ULTRA_LOW_LATENCY"/>
+                        <ComboBoxItem Content="Tajam Full HD (1080p • 24 FPS • 8 Mbps)" Tag="SHARP_HD"/>
+                        <ComboBoxItem Content="Seimbang Full HD (1080p • 24 FPS • 6 Mbps)" Tag="BALANCED"/>
+                        <ComboBoxItem Content="Latensi Ultra (1080p • 30 FPS)" Tag="ULTRA_LOW_LATENCY"/>
                         <ComboBoxItem Content="Hemat Data (720p • 15 FPS)" Tag="DATA_SAVER"/>
                     </ComboBox>
                 </StackPanel>
