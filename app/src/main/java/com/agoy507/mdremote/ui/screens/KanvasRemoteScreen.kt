@@ -187,6 +187,9 @@ fun KanvasRemoteScreen(
     val effectiveBottomInsetPx = imeBottomPx + extensionBarHeightPx
     val edgeMarginPx = with(density) { 40.dp.toPx() }
     val topSafeInsetPx = statusBarTopPx + with(density) { 64.dp.toPx() }
+    val alignVideoTop = viewportSize.height > viewportSize.width &&
+        !RemoteViewportMath.isPortraitFrame(frameWidth, frameHeight)
+    val videoTopAnchorPx = if (alignVideoTop) statusBarTopPx + with(density) { 48.dp.toPx() } else 0f
 
     var sawImeActuallyOpen by remember { mutableStateOf(false) }
     LaunchedEffect(imeBottomPx, keyboardVisible) {
@@ -218,8 +221,8 @@ fun KanvasRemoteScreen(
 
     val renderer = remember { TextureVideoRenderer(context) }
 
-    // Re-clamp pan whenever viewport dimensions, frame aspect, or IME inset changes
-    LaunchedEffect(viewportSize, frameWidth, frameHeight, zoom, effectiveBottomInsetPx) {
+    // Re-clamp pan whenever viewport dimensions, frame aspect, top alignment, or IME inset changes
+    LaunchedEffect(viewportSize, frameWidth, frameHeight, zoom, effectiveBottomInsetPx, alignVideoTop, videoTopAnchorPx) {
         val (bw, bh) = RemoteViewportMath.computeBaseSize(
             viewportSize.width.toFloat(),
             viewportSize.height.toFloat(),
@@ -234,8 +237,10 @@ fun KanvasRemoteScreen(
             baseH = bh,
             zoom = zoom,
             bottomInsetPx = effectiveBottomInsetPx,
+            alignTop = alignVideoTop,
+            topAnchorPx = videoTopAnchorPx,
         )
-        renderer.updateViewportTransform(zoom, panOffset)
+        renderer.updateViewportTransform(zoom, panOffset, alignVideoTop, videoTopAnchorPx)
     }
 
     // Auto-collapse unpinned toolbar after 18s of inactivity (similar to RealVNC)
@@ -325,6 +330,8 @@ fun KanvasRemoteScreen(
     val latestBottomInset by rememberUpdatedState(effectiveBottomInsetPx)
     val latestTopInset by rememberUpdatedState(topSafeInsetPx)
     val latestEdgeMargin by rememberUpdatedState(edgeMarginPx)
+    val latestAlignVideoTop by rememberUpdatedState(alignVideoTop)
+    val latestVideoTopAnchor by rememberUpdatedState(videoTopAnchorPx)
 
     val latestOnTap by rememberUpdatedState(onSendTap)
     val latestOnSwipe by rememberUpdatedState(onSendSwipe)
@@ -345,6 +352,8 @@ fun KanvasRemoteScreen(
         baseH = baseH,
         zoom = zoom,
         pan = panOffset,
+        alignTop = alignVideoTop,
+        topAnchorPx = videoTopAnchorPx,
     )
 
     Box(
@@ -393,6 +402,8 @@ fun KanvasRemoteScreen(
                             bh,
                             zoom,
                             panOffset,
+                            alignTop = latestAlignVideoTop,
+                            topAnchorPx = latestVideoTopAnchor,
                         )
 
                         val downPos = firstDown.position
@@ -487,6 +498,8 @@ fun KanvasRemoteScreen(
                                                 curBh,
                                                 zoom,
                                                 panOffset,
+                                                alignTop = latestAlignVideoTop,
+                                                topAnchorPx = latestVideoTopAnchor,
                                             )
                                             val endNorm = RemoteViewportMath.screenToNorm(lastSinglePos, curRect)
                                             val duration = (System.currentTimeMillis() - downTimeMs).coerceIn(80L, 1200L)
@@ -528,6 +541,8 @@ fun KanvasRemoteScreen(
                                                     curBh,
                                                     zoom,
                                                     panOffset,
+                                                    alignTop = latestAlignVideoTop,
+                                                    topAnchorPx = latestVideoTopAnchor,
                                                 )
                                                 val norm = RemoteViewportMath.screenToNorm(initialMultiCentroid, curRect)
                                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -614,10 +629,17 @@ fun KanvasRemoteScreen(
                                             minZoom = 1f,
                                             maxZoom = 5f,
                                             bottomInsetPx = latestBottomInset,
+                                            alignTop = latestAlignVideoTop,
+                                            topAnchorPx = latestVideoTopAnchor,
                                         )
                                         zoom = newZoom
                                         panOffset = newPan
-                                        renderer.updateViewportTransform(newZoom, newPan)
+                                        renderer.updateViewportTransform(
+                                            newZoom,
+                                            newPan,
+                                            latestAlignVideoTop,
+                                            latestVideoTopAnchor,
+                                        )
                                         prevMultiCentroid = centroid
                                         prevMultiSpan = span
                                     }
@@ -702,6 +724,8 @@ fun KanvasRemoteScreen(
                                                 curBh,
                                                 zoom,
                                                 panOffset,
+                                                alignTop = latestAlignVideoTop,
+                                                topAnchorPx = latestVideoTopAnchor,
                                             )
                                             val sensitivity = 1.35f
                                             val dNormX = (delta.x * sensitivity) / curRect.scaledWidth.coerceAtLeast(1f)
@@ -722,8 +746,15 @@ fun KanvasRemoteScreen(
                                                 edgeMarginPx = latestEdgeMargin,
                                                 topInsetPx = latestTopInset,
                                                 bottomInsetPx = latestBottomInset,
+                                                alignTop = latestAlignVideoTop,
+                                                topAnchorPx = latestVideoTopAnchor,
                                             )
-                                            renderer.updateViewportTransform(zoom, panOffset)
+                                            renderer.updateViewportTransform(
+                                                zoom,
+                                                panOffset,
+                                                latestAlignVideoTop,
+                                                latestVideoTopAnchor,
+                                            )
                                             val now = System.currentTimeMillis()
                                             if (now - lastMoveSentTimeMs >= 18L) {
                                                 lastMoveSentTimeMs = now
@@ -743,7 +774,9 @@ fun KanvasRemoteScreen(
         ) {
             AndroidView(
                 factory = { renderer },
-                update = { view -> view.updateViewportTransform(zoom, panOffset) },
+                update = { view ->
+                    view.updateViewportTransform(zoom, panOffset, alignVideoTop, videoTopAnchorPx)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
 

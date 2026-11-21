@@ -241,10 +241,15 @@ class WebRtcRemoteManager(
     private fun applyBitrateLimit(preset: StreamQualityPreset) {
         val sender = localVideoSender ?: return
         val params = sender.parameters ?: return
-        params.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+        params.degradationPreference = when (preset) {
+            StreamQualityPreset.ULTRA_LOW_LATENCY -> RtpParameters.DegradationPreference.BALANCED
+            else -> RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
+        }
         for (encoding in params.encodings) {
             encoding.maxBitrateBps = preset.maxBitrateKbps * 1000
+            encoding.minBitrateBps = (preset.maxBitrateKbps * 350).coerceAtLeast(600_000)
             encoding.maxFramerate = preset.fps
+            encoding.scaleResolutionDownBy = 1.0
         }
         sender.parameters = params
     }

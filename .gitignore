@@ -16,6 +16,8 @@
 local.properties
 .env
 debug.keystore
+*.jks
+keystore.properties
 uploads/
 bin/
 obj/

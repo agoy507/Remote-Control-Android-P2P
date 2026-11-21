@@ -33,6 +33,8 @@ internal class ZoomableGlDrawer(
     @Volatile var zoom: Float = 1f
     @Volatile var panX: Float = 0f
     @Volatile var panY: Float = 0f
+    @Volatile var alignTop: Boolean = false
+    @Volatile var topAnchorPx: Float = 0f
     @Volatile var rotatedFrameWidth: Int = 0
     @Volatile var rotatedFrameHeight: Int = 0
 
@@ -231,6 +233,8 @@ internal class ZoomableGlDrawer(
             frameH = effectiveH,
             zoom = zoom,
             pan = Offset(panX, panY),
+            alignTop = alignTop,
+            topAnchorPx = topAnchorPx,
         ) ?: return null
 
         // Map top-down video UVs [vTop..vBottom] to OpenGL bottom-up texture coordinates
@@ -373,6 +377,8 @@ class TextureVideoRenderer(context: Context) : TextureView(context), VideoSink, 
     private var appliedZoom = 1f
     private var appliedPanX = 0f
     private var appliedPanY = 0f
+    private var appliedAlignTop = false
+    private var appliedTopAnchorPx = 0f
 
     fun init(
         sharedContext: EglBase.Context,
@@ -395,20 +401,31 @@ class TextureVideoRenderer(context: Context) : TextureView(context), VideoSink, 
         }
     }
 
-    fun updateViewportTransform(zoom: Float, pan: Offset) {
+    fun updateViewportTransform(
+        zoom: Float,
+        pan: Offset,
+        alignTop: Boolean = false,
+        topAnchorPx: Float = 0f,
+    ) {
         if (abs(zoom - appliedZoom) < 1e-4f &&
             abs(pan.x - appliedPanX) < 1e-4f &&
-            abs(pan.y - appliedPanY) < 1e-4f
+            abs(pan.y - appliedPanY) < 1e-4f &&
+            alignTop == appliedAlignTop &&
+            abs(topAnchorPx - appliedTopAnchorPx) < 0.5f
         ) {
             return
         }
         appliedZoom = zoom
         appliedPanX = pan.x
         appliedPanY = pan.y
+        appliedAlignTop = alignTop
+        appliedTopAnchorPx = topAnchorPx
 
         zoomableDrawer.zoom = zoom
         zoomableDrawer.panX = pan.x
         zoomableDrawer.panY = pan.y
+        zoomableDrawer.alignTop = alignTop
+        zoomableDrawer.topAnchorPx = topAnchorPx
         redrawCachedFrame()
     }
 

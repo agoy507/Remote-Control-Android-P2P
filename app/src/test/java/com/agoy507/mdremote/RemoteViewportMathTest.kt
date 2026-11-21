@@ -206,4 +206,44 @@ class RemoteViewportMathTest {
         assertEquals(expectedBotRight.x, crop4x.uRight, 0.001f)
         assertEquals(expectedBotRight.y, crop4x.vBottom, 0.001f)
     }
+
+    @Test
+    fun `top aligned landscape video sits below top anchor at 1x and 1_6x and anchors zoom cleanly`() {
+        val viewportW = 1080f
+        val viewportH = 2400f
+        val topAnchor = 180f
+        val (baseW, baseH) = RemoteViewportMath.computeBaseSize(viewportW, viewportH, 1366, 768)
+
+        // At 1x and 1.6x, videoTop stays pinned right at topAnchor (no gap above!)
+        val rect1x = RemoteViewportMath.computeVideoRect(
+            viewportW, viewportH, baseW, baseH, zoom = 1f, pan = Offset.Zero, alignTop = true, topAnchorPx = topAnchor,
+        )
+        assertEquals(topAnchor, rect1x.videoTop, 0.01f)
+
+        val crop16x = RemoteViewportMath.computeGlCrop(
+            viewportW = viewportW,
+            viewportH = viewportH,
+            frameW = 1366,
+            frameH = 768,
+            zoom = 1.6f,
+            pan = Offset.Zero,
+            alignTop = true,
+            topAnchorPx = topAnchor,
+        )!!
+        val expectedGlTop = viewportH - topAnchor
+        assertEquals(expectedGlTop, (crop16x.glY + crop16x.glHeight).toFloat(), 1.5f)
+
+        // At 4x zoom, vertical panning down to the bottom of the screen is allowed without exposing above topAnchor
+        val clamped = RemoteViewportMath.clampPan(
+            pan = Offset(0f, 150f),
+            viewportW = viewportW,
+            viewportH = viewportH,
+            baseW = baseW,
+            baseH = baseH,
+            zoom = 4f,
+            alignTop = true,
+            topAnchorPx = topAnchor,
+        )
+        assertEquals(0f, clamped.y, 0.01f)
+    }
 }

@@ -68,6 +68,8 @@ object RemoteViewportMath {
         baseH: Float,
         zoom: Float,
         bottomInsetPx: Float = 0f,
+        alignTop: Boolean = false,
+        topAnchorPx: Float = 0f,
     ): Offset {
         val vw = viewportW.coerceAtLeast(1f)
         val vh = viewportH.coerceAtLeast(1f)
@@ -75,12 +77,19 @@ object RemoteViewportMath {
         val scaledH = baseH * zoom
 
         val maxPanX = ((scaledW - vw) / 2f).coerceAtLeast(0f)
-        val maxPanY = ((scaledH - vh) / 2f).coerceAtLeast(0f)
-        val minPanY = min(-maxPanY, (vh - scaledH) / 2f - bottomInsetPx.coerceAtLeast(0f))
+        val clampedY = if (alignTop) {
+            val usableBottom = (vh - bottomInsetPx.coerceAtLeast(0f)).coerceAtLeast(topAnchorPx + 1f)
+            val minPanY = (usableBottom - topAnchorPx - scaledH).coerceAtMost(0f)
+            pan.y.coerceIn(minPanY, 0f)
+        } else {
+            val maxPanY = ((scaledH - vh) / 2f).coerceAtLeast(0f)
+            val minPanY = min(-maxPanY, (vh - scaledH) / 2f - bottomInsetPx.coerceAtLeast(0f))
+            pan.y.coerceIn(minPanY, maxPanY)
+        }
 
         return Offset(
             x = pan.x.coerceIn(-maxPanX, maxPanX),
-            y = pan.y.coerceIn(minPanY, maxPanY),
+            y = clampedY,
         )
     }
 
@@ -91,11 +100,17 @@ object RemoteViewportMath {
         baseH: Float,
         zoom: Float,
         pan: Offset,
+        alignTop: Boolean = false,
+        topAnchorPx: Float = 0f,
     ): FittedVideoRect {
         val scaledW = (baseW * zoom).coerceAtLeast(1f)
         val scaledH = (baseH * zoom).coerceAtLeast(1f)
         val left = (viewportW - scaledW) / 2f + pan.x
-        val top = (viewportH - scaledH) / 2f + pan.y
+        val top = if (alignTop) {
+            topAnchorPx + pan.y
+        } else {
+            (viewportH - scaledH) / 2f + pan.y
+        }
         return FittedVideoRect(
             baseWidth = baseW,
             baseHeight = baseH,
@@ -131,13 +146,15 @@ object RemoteViewportMath {
         minZoom: Float = 1f,
         maxZoom: Float = 5f,
         bottomInsetPx: Float = 0f,
+        alignTop: Boolean = false,
+        topAnchorPx: Float = 0f,
     ): Pair<Float, Offset> {
         val safeZoom = currentZoom.coerceAtLeast(0.01f)
         val newZoom = (safeZoom * zoomChange).coerceIn(minZoom, maxZoom)
         val scaleFactor = newZoom / safeZoom
-        val center = Offset(viewportW / 2f, viewportH / 2f)
+        val anchor = Offset(viewportW / 2f, if (alignTop) topAnchorPx else viewportH / 2f)
 
-        val anchoredPan = (centroid - center) * (1f - scaleFactor) +
+        val anchoredPan = (centroid - anchor) * (1f - scaleFactor) +
             currentPan * scaleFactor +
             panChange
 
@@ -149,6 +166,8 @@ object RemoteViewportMath {
             baseH = baseH,
             zoom = newZoom,
             bottomInsetPx = bottomInsetPx,
+            alignTop = alignTop,
+            topAnchorPx = topAnchorPx,
         )
         return newZoom to clampedPan
     }
@@ -164,15 +183,30 @@ object RemoteViewportMath {
         edgeMarginPx: Float,
         topInsetPx: Float,
         bottomInsetPx: Float,
+        alignTop: Boolean = false,
+        topAnchorPx: Float = 0f,
     ): Offset {
         if (zoom <= 1.01f && bottomInsetPx <= 0f) return currentPan
 
-        val rect = computeVideoRect(viewportW, viewportH, baseW, baseH, zoom, currentPan)
+        val rect = computeVideoRect(
+            viewportW = viewportW,
+            viewportH = viewportH,
+            baseW = baseW,
+            baseH = baseH,
+            zoom = zoom,
+            pan = currentPan,
+            alignTop = alignTop,
+            topAnchorPx = topAnchorPx,
+        )
         val cursorScreen = normToScreen(cursorNorm, rect)
 
         val safeLeft = edgeMarginPx
         val safeRight = (viewportW - edgeMarginPx).coerceAtLeast(safeLeft + 1f)
-        val safeTop = (topInsetPx + edgeMarginPx).coerceAtMost(viewportH * 0.45f)
+        val safeTop = if (alignTop) {
+            (topAnchorPx + edgeMarginPx * 0.5f).coerceAtMost(viewportH * 0.45f)
+        } else {
+            (topInsetPx + edgeMarginPx).coerceAtMost(viewportH * 0.45f)
+        }
         val safeBottom = (viewportH - bottomInsetPx - edgeMarginPx).coerceAtLeast(safeTop + 1f)
 
         var dx = 0f
@@ -199,6 +233,8 @@ object RemoteViewportMath {
             baseH = baseH,
             zoom = zoom,
             bottomInsetPx = bottomInsetPx,
+            alignTop = alignTop,
+            topAnchorPx = topAnchorPx,
         )
     }
 
@@ -209,10 +245,21 @@ object RemoteViewportMath {
         frameH: Int,
         zoom: Float,
         pan: Offset,
+        alignTop: Boolean = false,
+        topAnchorPx: Float = 0f,
     ): GlViewportCrop? {
         if (viewportW < 1f || viewportH < 1f) return null
         val (baseW, baseH) = computeBaseSize(viewportW, viewportH, frameW, frameH)
-        val rect = computeVideoRect(viewportW, viewportH, baseW, baseH, zoom, pan)
+        val rect = computeVideoRect(
+            viewportW = viewportW,
+            viewportH = viewportH,
+            baseW = baseW,
+            baseH = baseH,
+            zoom = zoom,
+            pan = pan,
+            alignTop = alignTop,
+            topAnchorPx = topAnchorPx,
+        )
 
         val visLeft = max(0f, rect.videoLeft)
         val visRight = min(viewportW, rect.videoLeft + rect.scaledWidth)
