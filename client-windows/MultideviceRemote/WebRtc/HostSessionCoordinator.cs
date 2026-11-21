@@ -77,6 +77,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         public required RTCPeerConnection PeerConnection { get; init; }
         public required DesktopScreenCapturer Capturer { get; init; }
         public RTCDataChannel? DataChannel { get; set; }
+        public CancellationTokenSource? DisconnectGraceCts;
         public long OutgoingSigSeq = 1L;
         public long ExpectedSigSeq = 1L;
         public long OutgoingDcSeq = 1L;
@@ -562,18 +563,27 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         pc.onconnectionstatechange += state =>
         {
             _logger.LogInformation("Host PeerConnection state: {State}", state);
+            AppendSessionLog($"PeerConnection state={state} (peer={activeSession.PeerAlias}, id={activeSession.PeerId})");
             if (_activeSession != activeSession) return;
 
             if (state == RTCPeerConnectionState.connected)
             {
+                CancelDisconnectGrace(activeSession);
                 capturer.Start();
+                capturer.ForceKeyFrame();
                 OnStatusChanged?.Invoke($"🟢 Tersambung dengan {activeSession.PeerAlias}");
                 OnPeerConnected?.Invoke(activeSession.PeerId, activeSession.PeerAlias, activeSession.SafetyFingerprint);
             }
-            else if (state == RTCPeerConnectionState.disconnected ||
-                     state == RTCPeerConnectionState.failed ||
+            else if (state == RTCPeerConnectionState.disconnected)
+            {
+                // WebRTC DISCONNECTED bersifat transien (misal gangguan Wi-Fi singkat); beri grace period 12 detik untuk pulih otomatis
+                OnStatusChanged?.Invoke($"🟡 Koneksi tidak stabil dengan {activeSession.PeerAlias} • Menunggu pemulihan…");
+                ScheduleDisconnectGrace(activeSession);
+            }
+            else if (state == RTCPeerConnectionState.failed ||
                      state == RTCPeerConnectionState.closed)
             {
+                CancelDisconnectGrace(activeSession);
                 CleanupActivePeerFromEvent($"Koneksi WebRTC {state}");
             }
         };
@@ -756,6 +766,63 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
         ));
     }
 
+    private void ScheduleDisconnectGrace(ActiveHostSession session)
+    {
+        var nextCts = new CancellationTokenSource();
+        var prevCts = Interlocked.Exchange(ref session.DisconnectGraceCts, nextCts);
+        if (prevCts != null)
+        {
+            try { prevCts.Cancel(); } catch { /* ignore */ }
+            try { prevCts.Dispose(); } catch { /* ignore */ }
+        }
+
+        var token = nextCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(12), token);
+                if (token.IsCancellationRequested) return;
+                if (_activeSession == session &&
+                    session.PeerConnection.connectionState != RTCPeerConnectionState.connected)
+                {
+                    AppendSessionLog($"Disconnect grace timeout (12s) -> memutus sesi peer={session.PeerAlias} state={session.PeerConnection.connectionState}");
+                    CleanupActivePeerFromEvent("Koneksi WebRTC terputus (timeout pemulihan 12 detik)");
+                }
+            }
+            catch (OperationCanceledException) { /* recovered or closed */ }
+        }, token);
+    }
+
+    private static void CancelDisconnectGrace(ActiveHostSession session)
+    {
+        var cts = Interlocked.Exchange(ref session.DisconnectGraceCts, null);
+        if (cts != null)
+        {
+            try { cts.Cancel(); } catch { /* ignore */ }
+            try { cts.Dispose(); } catch { /* ignore */ }
+        }
+    }
+
+    private static void AppendSessionLog(string message)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MultideviceRemote");
+            Directory.CreateDirectory(dir);
+            var logPath = Path.Combine(dir, "session.log");
+            if (File.Exists(logPath) && new FileInfo(logPath).Length > 512 * 1024)
+            {
+                var lines = File.ReadAllLines(logPath);
+                File.WriteAllLines(logPath, lines.Skip(Math.Max(0, lines.Length - 200)));
+            }
+            File.AppendAllText(logPath, $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}");
+        }
+        catch { /* ignore logging failure */ }
+    }
+
     private void CleanupActivePeerFromEvent(string reason)
     {
         ActiveHostSession? session;
@@ -767,6 +834,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
 
         if (session == null) return;
 
+        AppendSessionLog($"Session ended (peer={session.PeerAlias}): {reason}");
         DisposeActiveSessionResources(session);
         _injector.ReleaseHeldButtons();
         OnPeerDisconnected?.Invoke(reason);
@@ -778,6 +846,7 @@ public sealed class HostSessionCoordinator : IAsyncDisposable
 
     private static void DisposeActiveSessionResources(ActiveHostSession session)
     {
+        CancelDisconnectGrace(session);
         try { session.Capturer.Dispose(); } catch { /* ignore */ }
         try { session.PeerConnection.close(); } catch { /* ignore */ }
         try { session.PeerConnection.Dispose(); } catch { /* ignore */ }

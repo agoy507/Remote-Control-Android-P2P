@@ -170,7 +170,10 @@ public sealed class DesktopScreenCapturer : IDisposable
                 cfg.GThreads = (uint)Math.Clamp(Environment.ProcessorCount, 2, 8);
                 cfg.RcEndUsage = VpxRcMode.VPX_VBR;
                 cfg.RcUndershootPct = 100;
-                cfg.RcOvershootPct = 100;
+                cfg.RcOvershootPct = 40;
+                cfg.RcBufSz = 1000;
+                cfg.RcBufInitialSz = 500;
+                cfg.RcBufOptimalSz = 600;
                 cfg.RcDropframeThresh = 0;
                 cfg.RcResizeAllowed = 0;
 
@@ -199,30 +202,30 @@ public sealed class DesktopScreenCapturer : IDisposable
             case "SHARP_HD":
                 maxLongEdge = 1920;
                 fps = 24;
-                targetKbps = 8000;
-                minQuantizer = 2;
-                maxQuantizer = 10;
+                targetKbps = 5500;
+                minQuantizer = 3;
+                maxQuantizer = 12;
                 break;
             case "ULTRA_LOW_LATENCY":
                 maxLongEdge = 1920;
                 fps = 30;
-                targetKbps = 5500;
-                minQuantizer = 2;
-                maxQuantizer = 14;
+                targetKbps = 4500;
+                minQuantizer = 4;
+                maxQuantizer = 16;
                 break;
             case "DATA_SAVER":
                 maxLongEdge = 1366;
                 fps = 15;
-                targetKbps = 2000;
-                minQuantizer = 4;
+                targetKbps = 1800;
+                minQuantizer = 6;
                 maxQuantizer = 24;
                 break;
             default: // BALANCED
                 maxLongEdge = 1920;
                 fps = 24;
-                targetKbps = 6000;
-                minQuantizer = 2;
-                maxQuantizer = 12;
+                targetKbps = 4500;
+                minQuantizer = 4;
+                maxQuantizer = 15;
                 break;
         }
     }
@@ -363,7 +366,8 @@ public sealed class DesktopScreenCapturer : IDisposable
                                     _forceNextKeyFrame = true;
                                 }
 
-                                bool periodicKey = frameCounter % (fpsSnapshot * 10) == 0;
+                                // Interval keyframe periodik 45 detik agar tidak memicu lonjakan burst UDP berlebih di Wi-Fi/TURN
+                                bool periodicKey = frameCounter % (fpsSnapshot * 45) == 0;
                                 if (_forceNextKeyFrame || periodicKey)
                                 {
                                     _encoder.ForceKeyFrame();

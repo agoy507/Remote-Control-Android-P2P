@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Microsoft.UI.Xaml;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,7 +15,14 @@ public partial class App : Application
         UnhandledException += (_, e) => LogCrash("WinUI.UnhandledException", e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             LogCrash("AppDomain.UnhandledException", e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString()));
-        TaskScheduler.UnobservedTaskException += (_, e) => LogCrash("TaskScheduler.UnobservedTaskException", e.Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            e.SetObserved();
+            // SocketException (995 OperationAborted) adalah kondisi normal saat SIPSorcery menutup soket UDP/RTP
+            if (e.Exception.InnerExceptions.All(ex => ex is SocketException { SocketErrorCode: SocketError.OperationAborted } or OperationCanceledException))
+                return;
+            LogCrash("TaskScheduler.UnobservedTaskException", e.Exception);
+        };
 
         LoggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
         {

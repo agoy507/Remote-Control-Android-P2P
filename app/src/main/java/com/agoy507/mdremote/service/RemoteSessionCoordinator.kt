@@ -69,12 +69,14 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
     private var projectionIntent: Intent? = null
     private var pendingHostHandshake: PendingHostSession? = null
     private var activeHostSession: ActivePeerSession? = null
+    private var hostDisconnectGraceJob: Job? = null
     private var androidDragStart: Pair<Float, Float>? = null
     private var failedAuthAttempts = 0
 
     // Active Controller session state
     private var activeControllerSession: ActiveControllerSession? = null
     private var pingLoopJob: Job? = null
+    private var controllerDisconnectGraceJob: Job? = null
 
     private data class PendingHostSession(
         val sessionId: String,
@@ -213,6 +215,8 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
     }
 
     fun stopHostMode() {
+        hostDisconnectGraceJob?.cancel()
+        hostDisconnectGraceJob = null
         activeHostSession?.let { active ->
             sendSessionEnd(active.peerId, active.sessionId, "Host menghentikan berbagi layar.")
         }
@@ -309,6 +313,8 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
     }
 
     fun disconnectControllerSession() {
+        controllerDisconnectGraceJob?.cancel()
+        controllerDisconnectGraceJob = null
         pingLoopJob?.cancel()
         pingLoopJob = null
         activeControllerSession?.let { active ->
@@ -574,8 +580,11 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
 
                 override fun onPeerConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
                     scope.launch {
+                        if (activeControllerSession?.sessionId != ctrl.sessionId) return@launch
                         when (state) {
                             PeerConnection.PeerConnectionState.CONNECTED -> {
+                                controllerDisconnectGraceJob?.cancel()
+                                controllerDisconnectGraceJob = null
                                 _controllerState.value = ControllerSessionState.Connected(
                                     targetId = ctrl.targetId,
                                     targetAlias = ctrl.targetAlias,
@@ -586,9 +595,26 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                                 )
                                 startControllerHeartbeatLoop()
                             }
+                            PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                                // Transien: beri waktu 12 detik untuk pemulihan ICE otomatis sebelum memutus sesi
+                                if (controllerDisconnectGraceJob?.isActive != true) {
+                                    Log.w("MDRemote-Coord", "Controller WebRTC DISCONNECTED (grace 12s)...")
+                                    controllerDisconnectGraceJob = scope.launch {
+                                        delay(12_000L)
+                                        if (activeControllerSession?.sessionId == ctrl.sessionId &&
+                                            (_controllerState.value is ControllerSessionState.Connected ||
+                                                _controllerState.value is ControllerSessionState.NegotiatingIce)
+                                        ) {
+                                            Log.w("MDRemote-Coord", "Controller grace period habis; memutus sesi.")
+                                            disconnectControllerSession()
+                                        }
+                                    }
+                                }
+                            }
                             PeerConnection.PeerConnectionState.FAILED,
-                            PeerConnection.PeerConnectionState.DISCONNECTED,
                             PeerConnection.PeerConnectionState.CLOSED -> {
+                                controllerDisconnectGraceJob?.cancel()
+                                controllerDisconnectGraceJob = null
                                 if (_controllerState.value is ControllerSessionState.Connected ||
                                     _controllerState.value is ControllerSessionState.NegotiatingIce
                                 ) {
@@ -731,8 +757,11 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
 
                 override fun onPeerConnectionStateChanged(state: PeerConnection.PeerConnectionState) {
                     scope.launch {
+                        if (activeHostSession?.sessionId != hostSession.sessionId) return@launch
                         when (state) {
                             PeerConnection.PeerConnectionState.CONNECTED -> {
+                                hostDisconnectGraceJob?.cancel()
+                                hostDisconnectGraceJob = null
                                 _hostStatus.value = HostStatus.Connected(
                                     controllerId = hostSession.peerId,
                                     controllerAlias = hostSession.peerAlias,
@@ -746,9 +775,26 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
                                     "Terhubung E2EE dengan ${hostSession.peerAlias}",
                                 )
                             }
-                            PeerConnection.PeerConnectionState.DISCONNECTED,
+                            PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                                if (hostDisconnectGraceJob?.isActive != true) {
+                                    Log.w("MDRemote-Coord", "Host WebRTC DISCONNECTED (grace 12s)...")
+                                    hostDisconnectGraceJob = scope.launch {
+                                        delay(12_000L)
+                                        if (activeHostSession?.sessionId == hostSession.sessionId) {
+                                            activeHostSession = null
+                                            androidDragStart = null
+                                            if (_hostStatus.value is HostStatus.Connected) {
+                                                _hostStatus.value = HostStatus.WaitingForPeer()
+                                                RemoteHostService.updateStatus(appContext, "Menunggu koneksi terenkripsi E2EE…")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             PeerConnection.PeerConnectionState.FAILED,
                             PeerConnection.PeerConnectionState.CLOSED -> {
+                                hostDisconnectGraceJob?.cancel()
+                                hostDisconnectGraceJob = null
                                 activeHostSession = null
                                 androidDragStart = null
                                 if (_hostStatus.value is HostStatus.Connected) {
@@ -932,11 +978,15 @@ class RemoteSessionCoordinator private constructor(private val appContext: Conte
 
     private fun handleRemoteSessionEnded(ended: SignalingEvent.SessionEnded) {
         if (activeControllerSession?.sessionId == ended.sessionId) {
+            controllerDisconnectGraceJob?.cancel()
+            controllerDisconnectGraceJob = null
             pingLoopJob?.cancel()
             activeControllerSession = null
             webRtc.stopSession()
             _controllerState.value = ControllerSessionState.Error(ended.reason)
         } else if (activeHostSession?.sessionId == ended.sessionId) {
+            hostDisconnectGraceJob?.cancel()
+            hostDisconnectGraceJob = null
             activeHostSession = null
             webRtc.stopSession()
             if (_hostStatus.value is HostStatus.Connected) {
