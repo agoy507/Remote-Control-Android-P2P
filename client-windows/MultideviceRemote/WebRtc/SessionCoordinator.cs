@@ -58,6 +58,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
     public event Action<string>? OnDisconnected;
     public event Action<string>? OnError;
     public event Action<string>? OnStatusUpdate;
+    public event Action<int, int>? OnFrameResolutionChanged;
 
     public SessionCoordinator(
         string signalingUrl,
@@ -351,6 +352,7 @@ public sealed class SessionCoordinator : IAsyncDisposable
 
         // 2. Video Track & Endpoint (RecvOnly dengan VP8 decoder)
         _renderer = new VideoFrameRenderer(_swapChainPanel);
+        _renderer.OnFrameResolutionChanged += (w, h) => OnFrameResolutionChanged?.Invoke(w, h);
         _videoEndPoint = new WindowsVideoEndPoint(new VpxVideoEncoder());
 
         var videoTrack = new MediaStreamTrack(

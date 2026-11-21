@@ -20,6 +20,9 @@ data class FittedVideoRect(
  */
 object RemoteViewportMath {
 
+    fun isPortraitFrame(frameW: Int, frameH: Int): Boolean =
+        frameW > 0 && frameH > 0 && frameH > frameW
+
     fun computeBaseSize(
         viewportW: Float,
         viewportH: Float,

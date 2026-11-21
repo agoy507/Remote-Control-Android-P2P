@@ -112,6 +112,11 @@ public sealed partial class MainWindow : Window
             ConnectView.ShowStatus(status);
         });
 
+        _session.OnFrameResolutionChanged += (w, h) => DispatcherQueue.TryEnqueue(() =>
+        {
+            RemoteView.UpdateFrameResolution(w, h);
+        });
+
         try
         {
             await _session.StartAsync();

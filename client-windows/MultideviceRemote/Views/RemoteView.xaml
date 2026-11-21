@@ -2,7 +2,8 @@
 <UserControl
     x:Class="MultideviceRemote.Views.RemoteView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="True">
 
     <Grid Background="Black">
         <!-- Video surface — SIPSorcery render ke sini via VideoFrameRenderer -->
@@ -10,7 +11,7 @@
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Stretch"/>
 
-        <!-- Overlay toolbar (muncul saat hover / always visible) -->
+        <!-- Overlay toolbar -->
         <Grid VerticalAlignment="Top" HorizontalAlignment="Stretch"
               Background="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}"
               Padding="8,4">
@@ -29,17 +30,31 @@
 
             <!-- Control buttons -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                <!-- Home -->
-                <Button x:Name="HomeButton" Content="🏠" ToolTipService.ToolTip="Home (H)"
-                        Width="36" Height="32" Padding="0"
+                <Button x:Name="ModeToggleButton" Content="📱 Mode HP"
+                        ToolTipService.ToolTip="Ubah mode kontrol (HP Sentuh / PC Mouse)"
+                        Height="32" Padding="10,0" IsTabStop="False"
+                        Click="ModeToggleButton_Click"/>
+                <Button x:Name="KeyboardToggleButton" Content="⌨️ Ketik: ON"
+                        Style="{StaticResource AccentButtonStyle}"
+                        ToolTipService.ToolTip="Aktifkan/nonaktifkan ketik langsung via keyboard"
+                        Height="32" Padding="10,0" IsTabStop="False"
+                        Click="KeyboardToggleButton_Click"/>
+                <Button x:Name="PasteButton" Content="📋 Tempel"
+                        ToolTipService.ToolTip="Tempel teks clipboard Windows ke perangkat target"
+                        Height="32" Padding="10,0" IsTabStop="False"
+                        Click="PasteButton_Click"/>
+
+                <Rectangle Width="1" Height="20" Fill="Gray" Margin="4,0"/>
+
+                <!-- Navigation -->
+                <Button x:Name="HomeButton" Content="🏠" ToolTipService.ToolTip="Home / Win"
+                        Width="36" Height="32" Padding="0" IsTabStop="False"
                         Click="HomeButton_Click"/>
-                <!-- Back -->
-                <Button x:Name="BackButton" Content="◀" ToolTipService.ToolTip="Back (B)"
-                        Width="36" Height="32" Padding="0"
+                <Button x:Name="BackButton" Content="◀" ToolTipService.ToolTip="Back"
+                        Width="36" Height="32" Padding="0" IsTabStop="False"
                         Click="BackButton_Click"/>
-                <!-- Recents -->
-                <Button x:Name="RecentsButton" Content="⧉" ToolTipService.ToolTip="Recents (R)"
-                        Width="36" Height="32" Padding="0"
+                <Button x:Name="RecentsButton" Content="⧉" ToolTipService.ToolTip="Recents / Win+Tab"
+                        Width="36" Height="32" Padding="0" IsTabStop="False"
                         Click="RecentsButton_Click"/>
 
                 <Rectangle Width="1" Height="20" Fill="Gray" Margin="4,0"/>
@@ -47,7 +62,7 @@
                 <!-- Disconnect -->
                 <Button x:Name="DisconnectButton" Content="✕ Putuskan"
                         Style="{StaticResource AccentButtonStyle}"
-                        Height="32"
+                        Height="32" IsTabStop="False"
                         Click="DisconnectButton_Click"/>
             </StackPanel>
         </Grid>

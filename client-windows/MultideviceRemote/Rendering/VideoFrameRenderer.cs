@@ -27,6 +27,8 @@ public sealed class VideoFrameRenderer : IDisposable
     private int _lastWidth;
     private int _lastHeight;
 
+    public event Action<int, int>? OnFrameResolutionChanged;
+
     public VideoFrameRenderer(SwapChainPanel panel)
     {
         _panel = panel;
@@ -102,6 +104,7 @@ public sealed class VideoFrameRenderer : IDisposable
 
         _imageElement.Source = _bitmap;
         _logger.LogInformation("Video render surface diperbarui: {Width}x{Height}", width, height);
+        OnFrameResolutionChanged?.Invoke(width, height);
     }
 
     /// <summary>

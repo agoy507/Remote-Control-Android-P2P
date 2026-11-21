@@ -145,4 +145,12 @@ class RemoteViewportMathTest {
         val cursorScreen = RemoteViewportMath.normToScreen(Offset(0.98f, 0.5f), newRect)
         assertTrue(cursorScreen.x <= viewportW - edgeMargin + 0.5f)
     }
+
+    @Test
+    fun `isPortraitFrame detects portrait mobile frames vs landscape desktop frames`() {
+        assertTrue(RemoteViewportMath.isPortraitFrame(1080, 2280))
+        org.junit.Assert.assertFalse(RemoteViewportMath.isPortraitFrame(1920, 1080))
+        org.junit.Assert.assertFalse(RemoteViewportMath.isPortraitFrame(1280, 720))
+        org.junit.Assert.assertFalse(RemoteViewportMath.isPortraitFrame(0, 0))
+    }
 }

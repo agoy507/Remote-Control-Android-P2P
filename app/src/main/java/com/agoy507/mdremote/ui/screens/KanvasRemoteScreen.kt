@@ -157,6 +157,7 @@ fun KanvasRemoteScreen(
     val gestureScope = rememberCoroutineScope()
 
     var inputMode by remember { mutableStateOf(RemoteInputMode.TOUCHPAD) }
+    var userOverrodeInputMode by remember { mutableStateOf(false) }
     var showMouseOverlay by remember { mutableStateOf(false) }
     var keyboardVisible by remember { mutableStateOf(false) }
     var toolbarExpanded by remember { mutableStateOf(true) }
@@ -198,6 +199,21 @@ fun KanvasRemoteScreen(
             keyboardVisible = false
             sawImeActuallyOpen = false
             imeView.clearFocus()
+        }
+    }
+
+    // Auto-detect control mode from target frame orientation unless manually overridden
+    LaunchedEffect(frameWidth, frameHeight, userOverrodeInputMode) {
+        if (!userOverrodeInputMode && frameWidth > 0 && frameHeight > 0) {
+            val autoMode = if (RemoteViewportMath.isPortraitFrame(frameWidth, frameHeight)) {
+                RemoteInputMode.TOUCHSCREEN
+            } else {
+                RemoteInputMode.TOUCHPAD
+            }
+            if (autoMode == RemoteInputMode.TOUCHSCREEN) {
+                isDragLocked = false
+            }
+            inputMode = autoMode
         }
     }
 
@@ -811,7 +827,9 @@ fun KanvasRemoteScreen(
                 onShowFingerprint = { showFingerprintDialog = true },
                 onToggleMode = {
                     toolbarInteractionTick++
+                    userOverrodeInputMode = true
                     inputMode = if (inputMode == RemoteInputMode.TOUCHPAD) {
+                        isDragLocked = false
                         RemoteInputMode.TOUCHSCREEN
                     } else {
                         isDragLocked = false
