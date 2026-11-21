@@ -128,20 +128,25 @@ public sealed class DesktopScreenCapturer : IDisposable
     {
         switch (preset?.Trim().ToUpperInvariant())
         {
+            case "SHARP_HD":
+                maxLongEdge = 1920;
+                fps = 20;
+                targetKbps = 5500;
+                break;
             case "ULTRA_LOW_LATENCY":
-                maxLongEdge = 1280;
+                maxLongEdge = 1440;
                 fps = 30;
-                targetKbps = 2500;
+                targetKbps = 4000;
                 break;
             case "DATA_SAVER":
-                maxLongEdge = 960;
+                maxLongEdge = 1280;
                 fps = 15;
-                targetKbps = 800;
+                targetKbps = 1200;
                 break;
             default: // BALANCED
-                maxLongEdge = 1280;
-                fps = 24;
-                targetKbps = 1500;
+                maxLongEdge = 1920;
+                fps = 20;
+                targetKbps = 3500;
                 break;
         }
     }
@@ -281,7 +286,7 @@ public sealed class DesktopScreenCapturer : IDisposable
                                     _forceNextKeyFrame = true;
                                 }
 
-                                bool periodicKey = frameCounter % (fpsSnapshot * 2) == 0;
+                                bool periodicKey = frameCounter % (fpsSnapshot * 10) == 0;
                                 if (_forceNextKeyFrame || periodicKey)
                                 {
                                     _encoder.ForceKeyFrame();
@@ -498,47 +503,121 @@ public sealed class DesktopScreenCapturer : IDisposable
     /// <summary>Konversi top-down BGRA32 ke planar YUV I420 dengan BT.601 integer math dan rata-rata blok 2x2 untuk U/V.</summary>
     public static void ConvertBgraToI420(byte[] bgra, int width, int height, byte[] i420)
     {
+        if (width <= 0 || height <= 0) return;
+
         int ySize = width * height;
-        int uvStride = width / 2;
+        int uvStride = width >> 1;
+        int fullRowPairs = height >> 1;
         int uOffset = ySize;
-        int vOffset = ySize + uvStride * (height / 2);
-        int bgraStride = width * 4;
+        int vOffset = ySize + uvStride * fullRowPairs;
+        int bgraStride = width << 2;
 
-        for (int y = 0; y < height; y++)
+        int strips = Math.Clamp(Environment.ProcessorCount, 1, 8);
+        if (width >= 1280 && fullRowPairs >= strips * 2)
         {
-            int rowBase = y * bgraStride;
-            int yRowBase = y * width;
-            bool isEvenRow = (y & 1) == 0;
-            int nextRowBase = isEvenRow && (y + 1 < height) ? rowBase + bgraStride : rowBase;
-            int uvRowBase = (y >> 1) * uvStride;
+            int pairsPerStrip = (fullRowPairs + strips - 1) / strips;
+            Parallel.For(0, strips, strip =>
+            {
+                int start = strip * pairsPerStrip;
+                int end = Math.Min(fullRowPairs, start + pairsPerStrip);
+                if (start < end)
+                {
+                    ConvertRowPairRange(start, end, bgra, width, bgraStride, uvStride, uOffset, vOffset, i420);
+                }
+            });
+        }
+        else if (fullRowPairs > 0)
+        {
+            ConvertRowPairRange(0, fullRowPairs, bgra, width, bgraStride, uvStride, uOffset, vOffset, i420);
+        }
 
+        if ((height & 1) != 0)
+        {
+            int lastY = height - 1;
+            int rowBase = lastY * bgraStride;
+            int yRowBase = lastY * width;
             for (int x = 0; x < width; x++)
             {
                 int px = rowBase + (x << 2);
                 int b = bgra[px];
                 int g = bgra[px + 1];
                 int r = bgra[px + 2];
+                i420[yRowBase + x] = (byte)(((66 * r + 129 * g + 25 * b + 128) >> 8) + 16);
+            }
+        }
+    }
 
-                int yVal = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
-                i420[yRowBase + x] = (byte)Math.Clamp(yVal, 0, 255);
+    private static void ConvertRowPairRange(
+        int startPair,
+        int endPair,
+        byte[] bgra,
+        int width,
+        int bgraStride,
+        int uvStride,
+        int uOffset,
+        int vOffset,
+        byte[] i420)
+    {
+        int evenPairWidth = width & ~1;
+        bool hasOddCol = (width & 1) != 0;
 
-                if (isEvenRow && (x & 1) == 0 && (x + 1 < width))
-                {
-                    int p01 = px + 4;
-                    int p10 = nextRowBase + (x << 2);
-                    int p11 = p10 + 4;
+        for (int rowPair = startPair; rowPair < endPair; rowPair++)
+        {
+            int evenY = rowPair << 1;
+            int px0 = evenY * bgraStride;
+            int px1 = px0 + bgraStride;
+            int y0Idx = evenY * width;
+            int y1Idx = y0Idx + width;
+            int uvIdx = rowPair * uvStride;
 
-                    int bAvg = (b + bgra[p01] + bgra[p10] + bgra[p11]) >> 2;
-                    int gAvg = (g + bgra[p01 + 1] + bgra[p10 + 1] + bgra[p11 + 1]) >> 2;
-                    int rAvg = (r + bgra[p01 + 2] + bgra[p10 + 2] + bgra[p11 + 2]) >> 2;
+            for (int x = 0; x < evenPairWidth; x += 2)
+            {
+                int b00 = bgra[px0];
+                int g00 = bgra[px0 + 1];
+                int r00 = bgra[px0 + 2];
 
-                    int uVal = ((-38 * rAvg - 74 * gAvg + 112 * bAvg + 128) >> 8) + 128;
-                    int vVal = ((112 * rAvg - 94 * gAvg - 18 * bAvg + 128) >> 8) + 128;
+                int b01 = bgra[px0 + 4];
+                int g01 = bgra[px0 + 5];
+                int r01 = bgra[px0 + 6];
 
-                    int uvIdx = uvRowBase + (x >> 1);
-                    i420[uOffset + uvIdx] = (byte)Math.Clamp(uVal, 0, 255);
-                    i420[vOffset + uvIdx] = (byte)Math.Clamp(vVal, 0, 255);
-                }
+                int b10 = bgra[px1];
+                int g10 = bgra[px1 + 1];
+                int r10 = bgra[px1 + 2];
+
+                int b11 = bgra[px1 + 4];
+                int g11 = bgra[px1 + 5];
+                int r11 = bgra[px1 + 6];
+
+                i420[y0Idx]     = (byte)(((66 * r00 + 129 * g00 + 25 * b00 + 128) >> 8) + 16);
+                i420[y0Idx + 1] = (byte)(((66 * r01 + 129 * g01 + 25 * b01 + 128) >> 8) + 16);
+                i420[y1Idx]     = (byte)(((66 * r10 + 129 * g10 + 25 * b10 + 128) >> 8) + 16);
+                i420[y1Idx + 1] = (byte)(((66 * r11 + 129 * g11 + 25 * b11 + 128) >> 8) + 16);
+
+                int bAvg = (b00 + b01 + b10 + b11) >> 2;
+                int gAvg = (g00 + g01 + g10 + g11) >> 2;
+                int rAvg = (r00 + r01 + r10 + r11) >> 2;
+
+                i420[uOffset + uvIdx] = (byte)(((-38 * rAvg - 74 * gAvg + 112 * bAvg + 128) >> 8) + 128);
+                i420[vOffset + uvIdx] = (byte)(((112 * rAvg - 94 * gAvg - 18 * bAvg + 128) >> 8) + 128);
+
+                px0 += 8;
+                px1 += 8;
+                y0Idx += 2;
+                y1Idx += 2;
+                uvIdx++;
+            }
+
+            if (hasOddCol)
+            {
+                int b0 = bgra[px0];
+                int g0 = bgra[px0 + 1];
+                int r0 = bgra[px0 + 2];
+                i420[y0Idx] = (byte)(((66 * r0 + 129 * g0 + 25 * b0 + 128) >> 8) + 16);
+
+                int b1 = bgra[px1];
+                int g1 = bgra[px1 + 1];
+                int r1 = bgra[px1 + 2];
+                i420[y1Idx] = (byte)(((66 * r1 + 129 * g1 + 25 * b1 + 128) >> 8) + 16);
             }
         }
     }

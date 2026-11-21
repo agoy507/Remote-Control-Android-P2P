@@ -2,7 +2,9 @@ package com.agoy507.mdremote.ui.components
 
 import androidx.compose.ui.geometry.Offset
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 data class FittedVideoRect(
     val baseWidth: Float,
@@ -11,6 +13,17 @@ data class FittedVideoRect(
     val videoTop: Float,
     val scaledWidth: Float,
     val scaledHeight: Float,
+)
+
+data class GlViewportCrop(
+    val glX: Int,
+    val glY: Int,
+    val glWidth: Int,
+    val glHeight: Int,
+    val uLeft: Float,
+    val uRight: Float,
+    val vTop: Float,
+    val vBottom: Float,
 )
 
 /**
@@ -186,6 +199,49 @@ object RemoteViewportMath {
             baseH = baseH,
             zoom = zoom,
             bottomInsetPx = bottomInsetPx,
+        )
+    }
+
+    fun computeGlCrop(
+        viewportW: Float,
+        viewportH: Float,
+        frameW: Int,
+        frameH: Int,
+        zoom: Float,
+        pan: Offset,
+    ): GlViewportCrop? {
+        if (viewportW < 1f || viewportH < 1f) return null
+        val (baseW, baseH) = computeBaseSize(viewportW, viewportH, frameW, frameH)
+        val rect = computeVideoRect(viewportW, viewportH, baseW, baseH, zoom, pan)
+
+        val visLeft = max(0f, rect.videoLeft)
+        val visRight = min(viewportW, rect.videoLeft + rect.scaledWidth)
+        val visTop = max(0f, rect.videoTop)
+        val visBottom = min(viewportH, rect.videoTop + rect.scaledHeight)
+
+        if (visRight - visLeft < 1f || visBottom - visTop < 1f) return null
+
+        val uLeft = ((visLeft - rect.videoLeft) / rect.scaledWidth).coerceIn(0f, 1f)
+        val uRight = ((visRight - rect.videoLeft) / rect.scaledWidth).coerceIn(0f, 1f)
+        val vTop = ((visTop - rect.videoTop) / rect.scaledHeight).coerceIn(0f, 1f)
+        val vBottom = ((visBottom - rect.videoTop) / rect.scaledHeight).coerceIn(0f, 1f)
+
+        val vpW = viewportW.toInt().coerceAtLeast(1)
+        val vpH = viewportH.toInt().coerceAtLeast(1)
+        val glX = visLeft.roundToInt().coerceIn(0, vpW - 1)
+        val glY = (viewportH - visBottom).roundToInt().coerceIn(0, vpH - 1)
+        val glWidth = (visRight - visLeft).roundToInt().coerceIn(1, vpW - glX)
+        val glHeight = (visBottom - visTop).roundToInt().coerceIn(1, vpH - glY)
+
+        return GlViewportCrop(
+            glX = glX,
+            glY = glY,
+            glWidth = glWidth,
+            glHeight = glHeight,
+            uLeft = uLeft,
+            uRight = uRight,
+            vTop = vTop,
+            vBottom = vBottom,
         )
     }
 }

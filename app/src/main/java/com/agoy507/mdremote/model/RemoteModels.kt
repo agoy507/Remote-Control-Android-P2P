@@ -64,29 +64,37 @@ enum class StreamQualityPreset(
     val fps: Int,
     val maxBitrateKbps: Int,
 ) {
+    SHARP_HD(
+        label = "Tajam (Full HD)",
+        description = "1080p • 24 FPS • Teks tajam saat di-zoom",
+        maxWidth = 1080,
+        maxHeight = 1920,
+        fps = 24,
+        maxBitrateKbps = 5500,
+    ),
     ULTRA_LOW_LATENCY(
         label = "Latensi Ultra",
-        description = "720p • 60 FPS • Respons tercepat",
+        description = "1080p PC / 720p HP • Respons tercepat",
         maxWidth = 720,
         maxHeight = 1280,
         fps = 60,
-        maxBitrateKbps = 2500,
+        maxBitrateKbps = 4500,
     ),
     BALANCED(
         label = "Seimbang",
-        description = "720p • 30 FPS • Stabil untuk Wi-Fi/4G",
+        description = "1080p PC / 720p HP • Stabil untuk Wi-Fi/4G",
         maxWidth = 720,
         maxHeight = 1280,
         fps = 30,
-        maxBitrateKbps = 1500,
+        maxBitrateKbps = 3500,
     ),
     DATA_SAVER(
         label = "Hemat Data",
-        description = "540p • 24 FPS • Hemat kuota seluler",
+        description = "720p PC / 540p HP • Hemat kuota seluler",
         maxWidth = 540,
         maxHeight = 960,
         fps = 24,
-        maxBitrateKbps = 800,
+        maxBitrateKbps = 1200,
     ),
 }
 

@@ -81,7 +81,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -738,25 +737,11 @@ fun KanvasRemoteScreen(
                 }
                 .testTag("remote_video_canvas"),
         ) {
-            val baseWidthDp = with(density) { baseW.toDp() }
-            val baseHeightDp = with(density) { baseH.toDp() }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(baseWidthDp, baseHeightDp)
-                    .graphicsLayer(
-                        scaleX = zoom,
-                        scaleY = zoom,
-                        translationX = panOffset.x,
-                        translationY = panOffset.y,
-                    ),
-            ) {
-                AndroidView(
-                    factory = { renderer },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+            AndroidView(
+                factory = { renderer },
+                update = { view -> view.updateViewportTransform(zoom, panOffset) },
+                modifier = Modifier.fillMaxSize(),
+            )
 
             // Virtual PC Cursor (Touchpad mode) or Touch Ring (Touchscreen mode)
             Canvas(modifier = Modifier.fillMaxSize()) {

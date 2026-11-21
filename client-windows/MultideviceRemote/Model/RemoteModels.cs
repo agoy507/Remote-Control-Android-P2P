@@ -118,7 +118,7 @@ public sealed class AppSettings
     public string HostSessionPassword { get; set; } = GenerateHostPassword();
     public bool RequireVisualApproval { get; set; } = true;
     public bool AllowInputControl { get; set; } = true;
-    public string HostQualityPreset { get; set; } = "BALANCED";
+    public string HostQualityPreset { get; set; } = "SHARP_HD";
     public List<TrustedControllerEntry> TrustedControllers { get; set; } = new();
 
     public static string GenerateHostPassword()

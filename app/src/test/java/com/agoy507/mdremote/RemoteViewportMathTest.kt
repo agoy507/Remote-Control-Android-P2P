@@ -153,4 +153,57 @@ class RemoteViewportMathTest {
         org.junit.Assert.assertFalse(RemoteViewportMath.isPortraitFrame(1280, 720))
         org.junit.Assert.assertFalse(RemoteViewportMath.isPortraitFrame(0, 0))
     }
+
+    @Test
+    fun `computeGlCrop computes exact visible UV sub-rect and OpenGL viewport`() {
+        val viewportW = 1080f
+        val viewportH = 2280f
+
+        // 1. At zoom 1x, full 1920x1080 frame uses full UVs (0..1) and centered GL viewport
+        val crop1x = RemoteViewportMath.computeGlCrop(
+            viewportW = viewportW,
+            viewportH = viewportH,
+            frameW = 1920,
+            frameH = 1080,
+            zoom = 1f,
+            pan = Offset.Zero,
+        )!!
+        assertEquals(0f, crop1x.uLeft, 0.001f)
+        assertEquals(1f, crop1x.uRight, 0.001f)
+        assertEquals(0f, crop1x.vTop, 0.001f)
+        assertEquals(1f, crop1x.vBottom, 0.001f)
+        assertEquals(0, crop1x.glX)
+        assertEquals(1080, crop1x.glWidth)
+        assertEquals(608, crop1x.glHeight)
+        assertEquals(836, crop1x.glY)
+
+        // 2. At zoom 4x with pan, UVs match screenToNorm of visible screen intersection and stay in bounds
+        val zoom = 4f
+        val pan = Offset(-640f, 120f)
+        val crop4x = RemoteViewportMath.computeGlCrop(
+            viewportW = viewportW,
+            viewportH = viewportH,
+            frameW = 1920,
+            frameH = 1080,
+            zoom = zoom,
+            pan = pan,
+        )!!
+        assertTrue(crop4x.glX >= 0 && crop4x.glX + crop4x.glWidth <= viewportW.toInt())
+        assertTrue(crop4x.glY >= 0 && crop4x.glY + crop4x.glHeight <= viewportH.toInt())
+        assertTrue(crop4x.uRight > crop4x.uLeft && crop4x.uLeft >= 0f && crop4x.uRight <= 1f)
+        assertTrue(crop4x.vBottom > crop4x.vTop && crop4x.vTop >= 0f && crop4x.vBottom <= 1f)
+
+        val (bw, bh) = RemoteViewportMath.computeBaseSize(viewportW, viewportH, 1920, 1080)
+        val rect4x = RemoteViewportMath.computeVideoRect(viewportW, viewportH, bw, bh, zoom, pan)
+        val visLeft = maxOf(0f, rect4x.videoLeft)
+        val visRight = minOf(viewportW, rect4x.videoLeft + rect4x.scaledWidth)
+        val visTop = maxOf(0f, rect4x.videoTop)
+        val visBottom = minOf(viewportH, rect4x.videoTop + rect4x.scaledHeight)
+        val expectedTopLeft = RemoteViewportMath.screenToNorm(Offset(visLeft, visTop), rect4x)
+        val expectedBotRight = RemoteViewportMath.screenToNorm(Offset(visRight, visBottom), rect4x)
+        assertEquals(expectedTopLeft.x, crop4x.uLeft, 0.001f)
+        assertEquals(expectedTopLeft.y, crop4x.vTop, 0.001f)
+        assertEquals(expectedBotRight.x, crop4x.uRight, 0.001f)
+        assertEquals(expectedBotRight.y, crop4x.vBottom, 0.001f)
+    }
 }
